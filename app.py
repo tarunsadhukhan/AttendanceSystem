@@ -297,7 +297,10 @@ def login():
 
 # ════════════════════════════════════════════════════════════
 # Initialize DB tables on import (for gunicorn)
-init_db()
+try:
+    init_db()
+except Exception as e:
+    print(f"⚠️ init_db failed (will retry on first request): {e}")
 
 # ════════════════════════════════════════════════════════════
 if __name__ == '__main__':
