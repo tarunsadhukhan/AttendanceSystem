@@ -1,0 +1,14 @@
+[project]
+name = "attendance-system"
+version = "0.1.0"
+requires-python = ">=3.13"
+dependencies = [
+    "flask",
+    "flask-cors",
+    "mysql-connector-python",
+    "face-recognition",
+    "face-recognition-models @ git+https://github.com/ageitgey/face_recognition_models",
+    "numpy",
+    "opencv-python",
+    "setuptools<75",
+]
