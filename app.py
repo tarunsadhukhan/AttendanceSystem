@@ -296,8 +296,11 @@ def login():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 # ════════════════════════════════════════════════════════════
+# Initialize DB tables on import (for gunicorn)
+init_db()
+
+# ════════════════════════════════════════════════════════════
 if __name__ == '__main__':
-    init_db()
     print("✅ Starting Attendance Server...")
     print("✅ Open http://localhost:5051 to verify")
     app.run(debug=True, host='0.0.0.0', port=5051)

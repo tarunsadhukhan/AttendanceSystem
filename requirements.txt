@@ -1,0 +1,8 @@
+flask
+flask-cors
+mysql-connector-python
+face-recognition
+numpy
+opencv-python-headless
+setuptools<75
+gunicorn
