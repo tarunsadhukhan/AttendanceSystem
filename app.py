@@ -185,14 +185,6 @@ def mark_attendance():
         dept     = emp[7]; desig    = emp[8]; shift    = emp[9]
         today    = date.today()
 
-        # Duplicate check
-        cursor.execute("""
-            SELECT id FROM attendance
-            WHERE employee_id=%s AND date=%s
-        """, (emp_id, today))
-        if cursor.fetchone():
-            return jsonify({"status":  "already_marked",
-                            "message": f"Already marked for {name} today!"})
 
         # Late check
         cursor.execute(
@@ -221,6 +213,7 @@ def mark_attendance():
             "message":          "Attendance marked!",
             "employee":         name,
             "emp_code":         emp_code,
+            "emp_name":         name,
             "department":       dept,
             "designation":      desig,
             "shift":            shift,
