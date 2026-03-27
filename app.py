@@ -7,6 +7,7 @@ import base64
 import json
 import cv2
 import os
+import re
 from datetime import datetime, date
 from db import get_db, init_db
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -14,9 +15,6 @@ from werkzeug.security import generate_password_hash, check_password_hash
 app = Flask(__name__)
 CORS(app)
 
-# Directory to save employee photos
-PHOTO_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'employee_photos')
-os.makedirs(PHOTO_DIR, exist_ok=True)
 
 # ── Decode Base64 image ──────────────────────────────────────
 def decode_image(base64_str):
@@ -78,25 +76,22 @@ def register():
 
         print(f"Registering {data['name']} with emp_code {data['emp_code']} dept={dept_id} desig={desig_id} shift={shift_id}")
 
-        # Save photo to disk
-        photo_path = None
+        # Build HTML img tag with embedded base64 (no physical file)
+        photo_html = None
         try:
-            img_data = base64.b64decode(data['image'])
-            photo_filename = f"{data['emp_code']}_{datetime.now().strftime('%Y%m%d%H%M%S')}.jpg"
-            photo_path = os.path.join(PHOTO_DIR, photo_filename)
-            with open(photo_path, 'wb') as f:
-                f.write(img_data)
-            print(f"📸 Photo saved: {photo_path}")
+            raw_b64 = data['image']  # already base64 from Android
+            photo_html = f'<img src="data:image/jpeg;base64,{raw_b64}" />'
+            print(f"📸 Photo stored as HTML ({len(photo_html)} chars)")
         except Exception as pe:
-            print(f"⚠️ Photo save failed: {pe}")
-            photo_path = None
+            print(f"⚠️ Photo HTML build failed: {pe}")
+            photo_html = None
 
         cursor.execute("""
             INSERT INTO employees
-              (emp_code, name, department_id, designation_id, shift_id, face_embedding, photo_path)
+              (emp_code, name, department_id, designation_id, shift_id, face_embedding, photo_html)
             VALUES (%s,%s,%s,%s,%s,%s,%s)
         """, (data['emp_code'], data['name'], dept_id, desig_id, shift_id,
-              json.dumps(embedding), photo_path))
+              json.dumps(embedding), photo_html))
         db.commit()
         return jsonify({"status":  "success",
                         "message": f"{data['name']} registered!"})
@@ -375,7 +370,7 @@ def get_employees():
         cursor.execute("""
             SELECT e.id, e.emp_code, e.name,
                    e.department_id, e.designation_id, e.shift_id,
-                   e.photo_path, e.is_active, e.created_at,
+                   e.photo_html, e.is_active, e.created_at,
                    d.name AS department_name,
                    o.name AS designation_name,
                    s.name AS shift_name
@@ -389,11 +384,14 @@ def get_employees():
         rows = cursor.fetchall()
         for r in rows:
             r['created_at'] = str(r['created_at'])
-            # Load photo as base64 if exists
+            # Extract base64 from photo_html field (no physical file)
             r['photo_base64'] = None
-            if r.get('photo_path') and os.path.exists(r['photo_path']):
-                with open(r['photo_path'], 'rb') as f:
-                    r['photo_base64'] = base64.b64encode(f.read()).decode('utf-8')
+            if r.get('photo_html'):
+                match = re.search(r'base64,([^"]+)', r['photo_html'])
+                if match:
+                    r['photo_base64'] = match.group(1)
+            # Remove photo_html from response (not needed by client)
+            r.pop('photo_html', None)
         return jsonify({"status": "success",
                         "total":  len(rows),
                         "data":   rows})
