@@ -134,6 +134,48 @@ def update_face(emp_code):
         return jsonify({"status": "error", "message": str(e)}), 500
 
 # ════════════════════════════════════════════════════════════
+# ROUTE 2c — Lookup Employee by emp_code (for tick/check button)
+# ════════════════════════════════════════════════════════════
+@app.route('/employee/<emp_code>', methods=['GET'])
+def get_employee_by_code(emp_code):
+    """Look up employee by emp_code — returns name, photo_html, department, etc."""
+    try:
+        db     = get_db()
+        cursor = db.cursor()
+        cursor.execute("""
+            SELECT e.id, e.emp_code, e.name, e.photo_html,
+                   d.name AS department, o.name AS designation, s.name AS shift
+            FROM employees e
+            LEFT JOIN departments d  ON e.department_id  = d.id
+            LEFT JOIN occupations o  ON e.designation_id = o.id
+            LEFT JOIN shifts s       ON e.shift_id       = s.id
+            WHERE e.emp_code = %s AND e.is_active = 1
+        """, (emp_code,))
+        row = cursor.fetchone()
+        cursor.close()
+        db.close()
+
+        if not row:
+            return jsonify({"status": "error",
+                            "message": f"Employee code '{emp_code}' not found!"}), 404
+
+        print(f"✅ Employee lookup: {row[2]} ({row[1]}), photo_html={'Yes ('+str(len(row[3]))+' chars)' if row[3] else 'None'}")
+
+        return jsonify({
+            "status":      "success",
+            "emp_code":    row[1],
+            "emp_name":    row[2],
+            "photo_html":  row[3],
+            "department":  row[4],
+            "designation": row[5],
+            "shift":       row[6],
+            "message":     f"Employee found: {row[2]}"
+        })
+    except Exception as e:
+        print(f"❌ Employee lookup error: {str(e)}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+# ════════════════════════════════════════════════════════════
 # ROUTE 3 — Mark Attendance
 # ════════════════════════════════════════════════════════════
 @app.route('/attendance', methods=['POST'])
@@ -142,6 +184,7 @@ def mark_attendance():
         data            = request.json
         img_rgb         = decode_image(data['image'])
         live_encodings  = face_recognition.face_encodings(img_rgb)
+        att_type        = data.get('att_type', 'R')  # R=Regular, O=OT, C=Cash
 
         print(f"📥 Attendance POST data: {  {k: (v[:50] + '...') if k == 'image' and isinstance(v, str) and len(v) > 50 else v for k, v in data.items()}  }")
         if not live_encodings:
@@ -156,7 +199,7 @@ def mark_attendance():
                    e.department_id, e.designation_id, e.shift_id,
                    e.face_embedding,
                    d.name AS department, o.name AS designation,
-                   s.name AS shift
+                   s.name AS shift, e.photo_html
             FROM employees e
             LEFT JOIN departments d  ON e.department_id  = d.id
             LEFT JOIN occupations o  ON e.designation_id = o.id
@@ -181,31 +224,38 @@ def mark_attendance():
 
         emp      = employees[best_idx]
         emp_id   = emp[0]; emp_code = emp[1]; name = emp[2]
-        dept_id  = emp[3]; desig_id = emp[4]; shift_id = emp[5]
         dept     = emp[7]; desig    = emp[8]; shift    = emp[9]
-        today    = date.today()
+        photo_html_val = emp[10] if len(emp) > 10 else None
 
+        # Use IDs from request (form selection) -- fallback to employee defaults
+        dept_id  = data.get('department_id')  or emp[3]
+        desig_id = data.get('designation_id') or emp[4]
+        shift_id = data.get('shift_id')       or emp[5]
 
-        # Late check
-        cursor.execute(
-            "SELECT start_time FROM shifts WHERE id=%s", (shift_id,))
-        row    = cursor.fetchone()
-        status = "Present"
-        if row:
-            now_secs   = (datetime.now().hour * 3600 +
-                          datetime.now().minute * 60 +
-                          datetime.now().second)
-            shift_secs = int(row[0].total_seconds()) + 900  # +15 min
-            if now_secs > shift_secs:
-                status = "Late"
+        # Use attendance_date from request, fallback to today
+        att_date = data.get('attendance_date') or str(date.today())
+
+        # Hours from form
+        shift_hours   = data.get('shift_hours',   0)
+        working_hours = data.get('working_hours', 0)
+        idle_hours    = data.get('idle_hours',    0)
+
+        # Status is "Face" for camera-based attendance
+        status = "Face"
+
+        # Save the captured camera photo as HTML img tag
+        photo_att_html = f'<img src="data:image/jpeg;base64,{data["image"]}" />'
+        print(f"[ATT] dept_id={dept_id} shift_id={shift_id} desig_id={desig_id} att_type={att_type} date={att_date} hrs={shift_hours}/{working_hours}/{idle_hours}")
 
         cursor.execute("""
             INSERT INTO attendance
               (employee_id, emp_code, date, check_in,
-               shift_id, department_id, designation_id, status)
-            VALUES (%s,%s,%s,NOW(),%s,%s,%s,%s)
-        """, (emp_id, emp_code, today,
-              shift_id, dept_id, desig_id, status))
+               shift_id, department_id, designation_id, status, att_type, photo_att,
+               shift_hours, working_hours, idle_hours)
+            VALUES (%s,%s,%s,NOW(),%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        """, (emp_id, emp_code, att_date,
+              shift_id, dept_id, desig_id, status, att_type, photo_att_html,
+              shift_hours, working_hours, idle_hours))
         db.commit()
 
         return jsonify({
@@ -214,15 +264,92 @@ def mark_attendance():
             "employee":         name,
             "emp_code":         emp_code,
             "emp_name":         name,
+            "photo_html":       photo_html_val,
             "department":       dept,
             "designation":      desig,
             "shift":            shift,
             "attendance_status": status,
+            "att_type":         att_type,
             "time":             datetime.now().strftime("%H:%M:%S"),
             "confidence":       round((1 - float(distances[best_idx]))*100, 1)
         })
     except Exception as e:
         print(f"❌ Attendance error: {str(e)}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+# ════════════════════════════════════════════════════════════
+# ROUTE 3a — Mark Attendance Manually (no face recognition)
+# ════════════════════════════════════════════════════════════
+@app.route('/mark-attendance', methods=['POST'])
+def mark_attendance_manual():
+    """Marks attendance manually using employee code. Status = 'Manual'. No photo saved."""
+    try:
+        data     = request.json
+        emp_code = data.get('emp_code', '').strip()
+        att_type = data.get('att_type', 'R')  # R=Regular, O=OT, C=Cash
+
+        if not emp_code:
+            return jsonify({"status": "error",
+                            "message": "Employee code is required!"}), 400
+
+        db     = get_db()
+        cursor = db.cursor()
+        cursor.execute("""
+            SELECT e.id, e.emp_code, e.name, e.photo_html,
+                   e.department_id, e.designation_id, e.shift_id,
+                   d.name AS department, o.name AS designation, s.name AS shift
+            FROM employees e
+            LEFT JOIN departments d  ON e.department_id  = d.id
+            LEFT JOIN occupations o  ON e.designation_id = o.id
+            LEFT JOIN shifts s       ON e.shift_id       = s.id
+            WHERE e.emp_code = %s AND e.is_active = 1
+        """, (emp_code,))
+        row = cursor.fetchone()
+
+        if not row:
+            cursor.close(); db.close()
+            return jsonify({"status": "error",
+                            "message": f"Employee '{emp_code}' not found or inactive!"}), 404
+
+        emp_id   = row[0]; name = row[2]; photo_html_val = row[3]
+
+        # Use attendance_date from request, fallback to today
+        att_date = data.get('attendance_date') or str(date.today())
+
+        # Use IDs from request (form selection) — fallback to employee defaults
+        dept_id  = data.get('department_id')  or row[4]
+        desig_id = data.get('designation_id') or row[5]
+        shift_id = data.get('shift_id')       or row[6]
+
+        # Hours from form
+        shift_hours   = data.get('shift_hours',   0)
+        working_hours = data.get('working_hours', 0)
+        idle_hours    = data.get('idle_hours',    0)
+
+        print(f"[MANUAL-ATT] dept_id={dept_id} shift_id={shift_id} desig_id={desig_id} att_type={att_type} date={att_date} hrs={shift_hours}/{working_hours}/{idle_hours}")
+
+        cursor.execute("""
+            INSERT INTO attendance
+              (employee_id, emp_code, date, check_in,
+               shift_id, department_id, designation_id, status, att_type, photo_att,
+               shift_hours, working_hours, idle_hours)
+            VALUES (%s,%s,%s,NOW(),%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        """, (emp_id, emp_code, att_date,
+              shift_id, dept_id, desig_id, 'Manual', att_type, None,
+              shift_hours, working_hours, idle_hours))
+        db.commit()
+
+        cursor.close(); db.close()
+
+        return jsonify({
+            "status":     "success",
+            "emp_code":   emp_code,
+            "emp_name":   name,
+            "photo_html": photo_html_val,
+            "message":    f"Attendance marked for {name} (Manual)"
+        })
+    except Exception as e:
+        print(f"❌ Manual attendance error: {str(e)}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
 # ════════════════════════════════════════════════════════════
@@ -247,7 +374,8 @@ def check_face():
         cursor   = db.cursor()
         cursor.execute("""
             SELECT e.id, e.emp_code, e.name, e.face_embedding,
-                   d.name AS department, o.name AS designation, s.name AS shift
+                   d.name AS department, o.name AS designation, s.name AS shift,
+                   e.photo_html
             FROM employees e
             LEFT JOIN departments d  ON e.department_id  = d.id
             LEFT JOIN occupations o  ON e.designation_id = o.id
@@ -272,12 +400,14 @@ def check_face():
                             "message": "Face not recognized!"}), 401
 
         emp = employees[best_idx]
-        print(f"✅ Face matched: {emp[2]} ({emp[1]}) distance={best_dist:.3f}")
+        photo_html_val = emp[7] if len(emp) > 7 else None
+        print(f"✅ Face matched: {emp[2]} ({emp[1]}) distance={best_dist:.3f}, photo_html={'Yes ('+str(len(photo_html_val))+' chars)' if photo_html_val else 'None'}")
 
         return jsonify({
             "status":     "success",
             "emp_code":   emp[1],
             "emp_name":   emp[2],
+            "photo_html": photo_html_val,
             "department": emp[4],
             "designation":emp[5],
             "shift":      emp[6],
@@ -776,6 +906,274 @@ def login():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 # ════════════════════════════════════════════════════════════
+# ROUTE 12 — Dashboard Stats
+# ════════════════════════════════════════════════════════════
+@app.route('/dashboard-stats', methods=['GET'])
+def dashboard_stats():
+    """Returns dashboard statistics for a given date."""
+    try:
+        stat_date = request.args.get('date', str(date.today()))
+
+        db     = get_db()
+        cursor = db.cursor(dictionary=True)
+
+        # Total departments
+        cursor.execute("SELECT COUNT(*) AS cnt FROM departments")
+        total_departments = cursor.fetchone()['cnt']
+
+        # Total designations (occupations)
+        cursor.execute("SELECT COUNT(*) AS cnt FROM occupations")
+        total_designations = cursor.fetchone()['cnt']
+
+        # Total shifts
+        cursor.execute("SELECT COUNT(*) AS cnt FROM shifts")
+        total_shifts = cursor.fetchone()['cnt']
+
+        # Total active employees
+        cursor.execute("SELECT COUNT(*) AS cnt FROM employees WHERE is_active = 1")
+        total_employees = cursor.fetchone()['cnt']
+
+        # Present on that date (distinct emp_code)
+        cursor.execute("""
+            SELECT COUNT(DISTINCT emp_code) AS cnt
+            FROM attendance WHERE date = %s
+        """, (stat_date,))
+        total_present = cursor.fetchone()['cnt']
+
+        # Present by Face
+        cursor.execute("""
+            SELECT COUNT(DISTINCT emp_code) AS cnt
+            FROM attendance WHERE date = %s AND status = 'Face'
+        """, (stat_date,))
+        present_face = cursor.fetchone()['cnt']
+
+        # Present by Manual
+        cursor.execute("""
+            SELECT COUNT(DISTINCT emp_code) AS cnt
+            FROM attendance WHERE date = %s AND status = 'Manual'
+        """, (stat_date,))
+        present_manual = cursor.fetchone()['cnt']
+
+        # Absent = total active employees - present
+        total_absent = max(0, total_employees - total_present)
+
+        cursor.close()
+        db.close()
+
+        return jsonify({
+            'status':             'success',
+            'date':               stat_date,
+            'total_departments':  total_departments,
+            'total_designations': total_designations,
+            'total_shifts':       total_shifts,
+            'total_employees':    total_employees,
+            'total_present':      total_present,
+            'present_face':       present_face,
+            'present_manual':     present_manual,
+            'total_absent':       total_absent
+        })
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+# ════════════════════════════════════════════════════════════
+# ROUTE 13 — Attendance Report (date-range filter)
+# ════════════════════════════════════════════════════════════
+@app.route('/attendance-report', methods=['GET'])
+def attendance_report():
+    """Returns attendance records filtered by date range, department, emp_code."""
+    try:
+        from_date     = request.args.get('from_date')
+        to_date       = request.args.get('to_date')
+        department_id = request.args.get('department_id')
+        emp_code      = request.args.get('emp_code', '').strip()
+
+        if not from_date or not to_date:
+            return jsonify({'status': 'error',
+                            'message': 'from_date and to_date are required'}), 400
+
+        db     = get_db()
+        cursor = db.cursor(dictionary=True)
+
+        sql = """
+            SELECT a.id, a.emp_code, e.name AS emp_name,
+                   COALESCE(d.name, '') AS department_name,
+                   COALESCE(o.name, '') AS designation_name,
+                   COALESCE(s.name, '') AS shift_name,
+                   a.date AS attendance_date,
+                   a.check_in AS attendance_time,
+                   a.status, a.att_type,
+                   COALESCE(a.shift_hours, 0) AS shift_hours,
+                   COALESCE(a.working_hours, 0) AS working_hours,
+                   COALESCE(a.idle_hours, 0) AS idle_hours,
+                   IF(a.photo_att IS NOT NULL, 1, 0) AS has_photo
+            FROM attendance a
+            LEFT JOIN employees e   ON a.employee_id    = e.id
+            LEFT JOIN departments d ON a.department_id   = d.id
+            LEFT JOIN occupations o ON a.designation_id  = o.id
+            LEFT JOIN shifts s      ON a.shift_id        = s.id
+            WHERE a.date BETWEEN %s AND %s
+        """
+        params = [from_date, to_date]
+
+        if department_id:
+            sql += " AND a.department_id = %s"
+            params.append(department_id)
+
+        if emp_code:
+            sql += " AND a.emp_code LIKE %s"
+            params.append(f"%{emp_code}%")
+
+        sql += " ORDER BY a.date DESC, a.check_in DESC"
+
+        cursor.execute(sql, tuple(params))
+        rows = cursor.fetchall()
+
+        data = []
+        for row in rows:
+            data.append({
+                'id':               row['id'],
+                'emp_code':         row['emp_code'],
+                'emp_name':         row['emp_name'] or '',
+                'department_name':  row['department_name'] or '',
+                'designation_name': row['designation_name'] or '',
+                'shift_name':       row['shift_name'] or '',
+                'attendance_date':  str(row['attendance_date']),
+                'attendance_time':  str(row['attendance_time']),
+                'status':           row['status'] or '',
+                'att_type':         row['att_type'] or 'R',
+                'shift_hours':      float(row['shift_hours']),
+                'working_hours':    float(row['working_hours']),
+                'idle_hours':       float(row['idle_hours']),
+                'has_photo':        bool(row['has_photo'])
+            })
+
+        cursor.close()
+        db.close()
+
+        return jsonify({
+            'status': 'success',
+            'data':   data,
+            'total':  len(data)
+        })
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+# ════════════════════════════════════════════════════════════
+# ROUTE 13b — Get Attendance Photo (on-demand)
+# ════════════════════════════════════════════════════════════
+@app.route('/attendance-photo/<int:att_id>', methods=['GET'])
+def attendance_photo(att_id):
+    """Returns the attendance photo for a single record."""
+    try:
+        db     = get_db()
+        cursor = db.cursor(dictionary=True)
+        cursor.execute("SELECT photo_att FROM attendance WHERE id = %s", (att_id,))
+        row = cursor.fetchone()
+        cursor.close()
+        db.close()
+
+        if not row or not row.get('photo_att'):
+            return jsonify({'status': 'error', 'message': 'No photo'}), 404
+
+        import re as _re
+        match = _re.search(r'base64,([^"]+)', row['photo_att'])
+        photo_b64 = match.group(1) if match else None
+
+        return jsonify({'status': 'success', 'photo_att': photo_b64})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+# ════════════════════════════════════════════════════════════
+# ROUTE 14 — Update Employee
+# ════════════════════════════════════════════════════════════
+@app.route('/employees/<int:emp_id>', methods=['PUT'])
+def update_employee(emp_id):
+    try:
+        data = request.json
+        db     = get_db()
+        cursor = db.cursor()
+
+        fields = []
+        values = []
+
+        if 'name' in data:
+            fields.append("name = %s")
+            values.append(data['name'])
+        if 'emp_code' in data:
+            fields.append("emp_code = %s")
+            values.append(data['emp_code'])
+        if 'department_id' in data:
+            fields.append("department_id = %s")
+            values.append(data['department_id'])
+        if 'designation_id' in data:
+            fields.append("designation_id = %s")
+            values.append(data['designation_id'])
+        if 'shift_id' in data:
+            fields.append("shift_id = %s")
+            values.append(data['shift_id'])
+
+        # Handle face image update
+        if 'face_image' in data and data['face_image']:
+            try:
+                img_rgb   = decode_image(data['face_image'])
+                encodings = face_recognition.face_encodings(img_rgb)
+                if encodings:
+                    fields.append("face_embedding = %s")
+                    values.append(json.dumps(encodings[0].tolist()))
+                    photo_html = f'<img src="data:image/jpeg;base64,{data["face_image"]}" />'
+                    fields.append("photo_html = %s")
+                    values.append(photo_html)
+            except Exception as fe:
+                print(f"⚠️ Face update skipped: {fe}")
+
+        if not fields:
+            return jsonify({"status": "error",
+                            "message": "No fields to update!"}), 400
+
+        values.append(emp_id)
+        sql = f"UPDATE employees SET {', '.join(fields)} WHERE id = %s"
+        cursor.execute(sql, tuple(values))
+        db.commit()
+
+        if cursor.rowcount == 0:
+            return jsonify({"status": "error",
+                            "message": "Employee not found!"}), 404
+
+        cursor.close()
+        db.close()
+        return jsonify({"status":  "success",
+                        "message": "Employee updated!"})
+    except mysql.connector.IntegrityError:
+        return jsonify({"status": "error",
+                        "message": "Employee code already exists!"}), 409
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+# ════════════════════════════════════════════════════════════
+# ROUTE 15 — Delete Employee
+# ════════════════════════════════════════════════════════════
+@app.route('/employees/<int:emp_id>', methods=['DELETE'])
+def delete_employee(emp_id):
+    try:
+        db     = get_db()
+        cursor = db.cursor()
+        cursor.execute("""
+            UPDATE employees SET is_active = 0 WHERE id = %s
+        """, (emp_id,))
+        db.commit()
+
+        if cursor.rowcount == 0:
+            return jsonify({"status": "error",
+                            "message": "Employee not found!"}), 404
+
+        cursor.close()
+        db.close()
+        return jsonify({"status":  "success",
+                        "message": "Employee deleted!"})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+# ════════════════════════════════════════════════════════════
 # Initialize DB tables on import (for gunicorn)
 try:
     init_db()
@@ -784,6 +1182,6 @@ except Exception as e:
 
 # ════════════════════════════════════════════════════════════
 if __name__ == '__main__':
-    print("✅ Starting Attendance Server...")
-    print("✅ Open http://localhost:5051 to verify")
+    print("[OK] Starting Attendance Server...")
+    print("[OK] Open http://localhost:5051 to verify")
     app.run(debug=True, host='0.0.0.0', port=5051)

@@ -36,5 +36,57 @@ def init_db():
         )
     """)
     db.commit()
+
+    # ── Attendance table migrations ──────────────────────────
+    # Add att_type column (R=Regular, O=OT, C=Cash)
+    try:
+        cursor.execute("""
+            ALTER TABLE attendance ADD COLUMN att_type CHAR(1) DEFAULT 'R'
+        """)
+        db.commit()
+        print("   [OK] Added 'att_type' column to attendance table")
+    except Exception:
+        pass  # column already exists
+
+    # Add photo_att column (stores captured attendance photo as HTML img)
+    try:
+        cursor.execute("""
+            ALTER TABLE attendance ADD COLUMN photo_att LONGTEXT DEFAULT NULL
+        """)
+        db.commit()
+        print("   [OK] Added 'photo_att' column to attendance table")
+    except Exception:
+        pass  # column already exists
+
+    # Add shift_hours column
+    try:
+        cursor.execute("""
+            ALTER TABLE attendance ADD COLUMN shift_hours DECIMAL(5,2) DEFAULT 0
+        """)
+        db.commit()
+        print("   [OK] Added 'shift_hours' column to attendance table")
+    except Exception:
+        pass  # column already exists
+
+    # Add working_hours column
+    try:
+        cursor.execute("""
+            ALTER TABLE attendance ADD COLUMN working_hours DECIMAL(5,2) DEFAULT 0
+        """)
+        db.commit()
+        print("   [OK] Added 'working_hours' column to attendance table")
+    except Exception:
+        pass  # column already exists
+
+    # Add idle_hours column
+    try:
+        cursor.execute("""
+            ALTER TABLE attendance ADD COLUMN idle_hours DECIMAL(5,2) DEFAULT 0
+        """)
+        db.commit()
+        print("   [OK] Added 'idle_hours' column to attendance table")
+    except Exception:
+        pass  # column already exists
+
     cursor.close()
     db.close()
