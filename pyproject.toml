@@ -11,4 +11,5 @@ dependencies = [
     "numpy",
     "opencv-python",
     "setuptools<75",
+    "bcrypt>=5.0.0",
 ]
