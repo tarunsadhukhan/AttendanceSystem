@@ -12,6 +12,7 @@ from src.auth.auth            import auth_bp
 from src.masters.company_branch import company_branch_bp
 from src.dashboard.dashboard  import dashboard_bp
 from src.onboarding.onboarding import onboarding_bp
+from src.masters.machines      import machines_bp
 
 app = Flask(__name__)
 CORS(app)
@@ -26,6 +27,7 @@ app.register_blueprint(auth_bp)
 app.register_blueprint(company_branch_bp)
 app.register_blueprint(dashboard_bp)
 app.register_blueprint(onboarding_bp)
+app.register_blueprint(machines_bp)
 
 
 # ── Health check ─────────────────────────────────────────────
