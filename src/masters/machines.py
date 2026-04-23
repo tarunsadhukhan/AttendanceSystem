@@ -9,7 +9,7 @@ GET_MACHINES_BY_DESIGNATION = """
     LEFT JOIN mech_occu_link mol ON mm.machine_id = mol.mech_id
     WHERE mol.occu_id = %s order by mm.mech_code,mm.machine_name
 """
-
+print ('GET MC', GET_MACHINES_BY_DESIGNATION)
 
 @machines_bp.route('/machines', methods=['GET'])
 def get_machines():
