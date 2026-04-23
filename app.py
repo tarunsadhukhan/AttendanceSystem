@@ -47,4 +47,4 @@ except Exception as e:
 if __name__ == '__main__':
     print("[OK] Starting Attendance Server...")
     print("[OK] Open http://localhost:5051 to verify")
-    app.run(debug=True, host='0.0.0.0', port=5051)
+    app.run(debug=True, host='0.0.0.0', port=5051, use_reloader=False)
