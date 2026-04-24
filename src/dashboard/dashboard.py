@@ -87,8 +87,10 @@ def dashboard_stats():
             """, (stat_date, branch_id))
         elif co_id:
             cursor.execute("""
-                SELECT COUNT(*) AS cnt FROM daily_attendance da
-                WHERE da.attendance_date = %s AND da.co_id = %s
+                SELECT COUNT(*) AS cnt
+                FROM daily_attendance da
+                JOIN hrms_ed_official_details o ON da.eb_id = o.eb_id
+                WHERE da.attendance_date = %s AND o.co_id = %s
             """, (stat_date, co_id))
         else:
             cursor.execute(
@@ -105,9 +107,11 @@ def dashboard_stats():
             """, (stat_date, branch_id))
         elif co_id:
             cursor.execute("""
-                SELECT COUNT(*) AS cnt FROM daily_attendance da
-                WHERE da.attendance_date = %s AND da.attendance_source = 'Face'
-                  AND da.co_id = %s
+                                SELECT COUNT(*) AS cnt
+                                FROM daily_attendance da
+                                JOIN hrms_ed_official_details o ON da.eb_id = o.eb_id
+                                WHERE da.attendance_date = %s AND da.attendance_source = 'Face'
+                                    AND o.co_id = %s
             """, (stat_date, co_id))
         else:
             cursor.execute("""
@@ -125,9 +129,11 @@ def dashboard_stats():
             """, (stat_date, branch_id))
         elif co_id:
             cursor.execute("""
-                SELECT COUNT(*) AS cnt FROM daily_attendance da
-                WHERE da.attendance_date = %s AND da.attendance_source = 'Manual'
-                  AND da.co_id = %s
+                                SELECT COUNT(*) AS cnt
+                                FROM daily_attendance da
+                                JOIN hrms_ed_official_details o ON da.eb_id = o.eb_id
+                                WHERE da.attendance_date = %s AND da.attendance_source = 'Manual'
+                                    AND o.co_id = %s
             """, (stat_date, co_id))
         else:
             cursor.execute("""
@@ -173,7 +179,7 @@ def dashboard_stats():
             pres_dept_query += " AND da.branch_id = %s"
             pres_params.append(branch_id)
         elif co_id:
-            pres_dept_query += " AND da.co_id = %s"
+            pres_dept_query += " AND o.co_id = %s"
             pres_params.append(co_id)
         pres_dept_query += " GROUP BY o.sub_dept_id"
         cursor.execute(pres_dept_query, tuple(pres_params))

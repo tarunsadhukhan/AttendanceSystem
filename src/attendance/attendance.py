@@ -27,6 +27,7 @@ def _require_face_recognition():
     return None
 
 
+
 # ── Face-based attendance ────────────────────────────────────
 @attendance_bp.route('/attendance', methods=['POST'])
 def mark_attendance():
@@ -41,7 +42,7 @@ def mark_attendance():
 
         img_rgb        = decode_image(data['image'])
         live_encodings = face_recognition.face_encodings(img_rgb)
-        att_type       = data.get('att_type', 'R')
+        att_type       = data.get('attendance_type') or data.get('att_type', 'R')
 
         print(f"📥 Attendance POST data: {  {k: (v[:50] + '...') if k == 'image' and isinstance(v, str) and len(v) > 50 else v for k, v in data.items()}  }")
 
@@ -92,17 +93,27 @@ def mark_attendance():
             spell_row = cursor.fetchone()
             spell_name = spell_row['spell_name'] if spell_row else None
 
-        photo_att_html = f'<img src="data:image/jpeg;base64,{data["image"]}" />'
         print(f"[ATT] eb_id={eb_id} emp_code={emp_code} att_type={att_type} "
               f"date={att_date} dept={department_id} shift={shift_id} desig={designation_id} "
               f"hrs={shift_hours}/{working_hours}/{idle_hours}")
 
         cursor.execute(Q.INSERT_ATTENDANCE,
-                       (eb_id, emp_code, att_date,
-                        'Face', att_type, photo_att_html,
-                        'P', 1, branch_id,
+                     (eb_id, att_date,
+                    'Face', att_type,
+                        'P', branch_id,
                         spell_name, shift_hours, department_id, designation_id,
                         working_hours, idle_hours))
+        
+        # Get the inserted attendance ID
+        attendance_id = cursor.lastrowid
+        
+        # Save machine data to daily_ebmc_attendance if machines are provided
+        machine_ids = data.get('machine_ids', [])
+        if machine_ids and isinstance(machine_ids, list):
+            for machine_id in machine_ids:
+                cursor.execute(Q.INSERT_MACHINE_ATTENDANCE,
+                             (attendance_id, eb_id, machine_id, att_date, branch_id))
+        
         db.commit()
         cursor.close()
         db.close()
@@ -118,6 +129,8 @@ def mark_attendance():
             "designation":       desig,
             "attendance_status": "Face",
             "att_type":          att_type,
+            "status_id":         "3",
+            "is_active":         1,
             "time":              datetime.now().strftime("%H:%M:%S"),
             "confidence":        round((1 - float(distances[best_idx])) * 100, 1)
         })
@@ -128,18 +141,22 @@ def mark_attendance():
 
 # ── Manual attendance ────────────────────────────────────────
 @attendance_bp.route('/mark-attendance', methods=['POST'])
+
 def mark_attendance_manual():
     try:
         data = request.json
         ok, errors = ManualAttendanceSchema.validate(data)
         if not ok:
+
+
             return jsonify({"status": "error", "message": errors[0]}), 400
 
         emp_code  = data.get('emp_code', '').strip()
-        att_type  = data.get('att_type', 'R')
+        att_type  = data.get('attendance_type') or data.get('att_type', 'R')
         branch_id = data.get('branch_id')
 
         if not emp_code:
+
             return jsonify({"status": "error",
                             "message": "Employee code is required!"}), 400
         if not branch_id:
@@ -160,9 +177,13 @@ def mark_attendance_manual():
         name           = employee['name'].strip()
         att_date       = data.get('attendance_date') or str(date.today())
         shift_id       = data.get('shift_id')
+
         department_id  = data.get('department_id')
+
         designation_id = data.get('designation_id')
+
         shift_hours    = data.get('shift_hours',   0)
+
         working_hours  = data.get('working_hours', 0)
         idle_hours     = data.get('idle_hours',    0)
 
@@ -178,20 +199,33 @@ def mark_attendance_manual():
               f"hrs={shift_hours}/{working_hours}/{idle_hours}")
 
         cursor.execute(Q.INSERT_ATTENDANCE,
-                       (eb_id, emp_code, att_date,
-                        'Manual', att_type, None,
-                        'P', 1, branch_id,
+                     (eb_id, att_date,
+                    'Manual', att_type,
+                        'P', branch_id,
                         spell_name, shift_hours, department_id, designation_id,
                         working_hours, idle_hours))
+        
+        # Get the inserted attendance ID
+        attendance_id = cursor.lastrowid
+        
+        # Save machine data to daily_ebmc_attendance if machines are provided
+        machine_ids = data.get('machine_ids', [])
+        if machine_ids and isinstance(machine_ids, list):
+            for machine_id in machine_ids:
+                cursor.execute(Q.INSERT_MACHINE_ATTENDANCE,
+                             (attendance_id, eb_id, machine_id, att_date, branch_id))
+        
         db.commit()
         cursor.close()
         db.close()
 
         return jsonify({
-            "status":   "success",
-            "emp_code": emp_code,
-            "emp_name": name,
-            "message":  f"Attendance marked for {name} (Manual)"
+            "status":    "success",
+            "emp_code":  emp_code,
+            "emp_name":  name,
+            "status_id": "3",
+            "is_active": 1,
+            "message":   f"Attendance marked for {name} (Manual)"
         })
     except Exception as e:
         print(f"❌ Manual attendance error: {str(e)}")
@@ -329,10 +363,10 @@ def attendance_report():
             sql += " AND o.sub_dept_id = %s"
             params.append(department_id)
         if emp_code:
-            sql += " AND da.emp_code LIKE %s"
+            sql += " AND o.emp_code LIKE %s"
             params.append(f"%{emp_code}%")
 
-        sql += " ORDER BY da.attendance_date DESC, da.attendance_time DESC"
+        sql += " ORDER BY da.attendance_date DESC, da.entry_time DESC"
         cursor.execute(sql, tuple(params))
         rows = cursor.fetchall()
         cursor.close()

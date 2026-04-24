@@ -3,14 +3,14 @@ from src.schemas import Schema
 
 class MarkAttendanceSchema(Schema):
     required = ['image']
-    optional = ['att_type', 'attendance_date',
+    optional = ['att_type', 'attendance_type', 'attendance_date',
                 'department_id', 'designation_id', 'shift_id',
                 'shift_hours', 'working_hours', 'idle_hours']
 
 
 class ManualAttendanceSchema(Schema):
     required = ['emp_code']
-    optional = ['att_type', 'attendance_date', 'branch_id',
+    optional = ['att_type', 'attendance_type', 'attendance_date', 'branch_id',
                 'department_id', 'designation_id', 'shift_id',
                 'shift_hours', 'working_hours', 'idle_hours']
 
