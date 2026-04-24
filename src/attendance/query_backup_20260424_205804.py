@@ -4,15 +4,15 @@ INSERT_ATTENDANCE = """
        attendance_source, attendance_type,
        attendance_mark, is_active, branch_id,
        spell, spell_hours, worked_department_id, worked_designation_id,
-       status_id, working_hours, idle_hours)
-    VALUES (%s, %s, %s, %s, %s, 1, %s, %s, %s, %s, %s, '3', %s, %s  )
+       status_id, working_hours, idle_hours, entry_time, update_date_time)
+    VALUES (%s, %s, %s, %s, %s, 1, %s, %s, %s, %s, %s, '3', %s, %s, NOW(), NOW())
 """
-print('ins att',INSERT_ATTENDANCE )
+
 INSERT_MACHINE_ATTENDANCE = """
     INSERT INTO daily_ebmc_attendance
       (daily_atten_id, eb_id, mc_id,
-     is_active)
-    VALUES (%s, %s, %s,   1)
+       branch_id, is_active, update_date_time)
+    VALUES (%s, %s, %s, %s, %s, 1, NOW())
 """
 
 GET_TODAY_REPORT = """
@@ -49,7 +49,7 @@ GET_MONTHLY_REPORT = """
 """
 
 GET_ATTENDANCE_REPORT_BASE = """
-    SELECT da.daily_atten_id AS id, o.emp_code, o.eb_id,
+    SELECT da.daily_atten_id AS id, o.emp_code,
            CONCAT(p.first_name, ' ', COALESCE(p.middle_name, ''), ' ', COALESCE(p.last_name, '')) AS emp_name,
            COALESCE(s.sub_dept_desc, '') AS department_name,
            COALESCE(d.desig, '')         AS designation_name,
@@ -116,4 +116,3 @@ GET_PRESENT_BY_DEPT = """
     WHERE da.attendance_date = %s
     GROUP BY o.sub_dept_id
 """
-
