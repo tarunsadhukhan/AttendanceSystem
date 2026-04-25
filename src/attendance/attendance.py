@@ -493,3 +493,58 @@ def attendance_photo(att_id):
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 
+# -- Update Attendance (Edit Attendance dialog) --------------------------
+# Updates an existing daily_attendance row and re-syncs daily_ebmc_attendance
+# (marks all existing machine rows as is_active=0, then inserts new machines).
+@attendance_bp.route('/attendance/<int:atten_id>', methods=['PUT'])
+def update_attendance(atten_id):
+    try:
+        data = request.json or {}
+        att_type        = (data.get('attendance_type') or data.get('att_type') or 'R')
+        department_id   = data.get('department_id')
+        designation_id  = data.get('designation_id')
+        working_hours   = data.get('working_hours', 0) or 0
+        idle_hours      = data.get('idle_hours', 0) or 0
+        machine_ids     = data.get('machine_ids') or []
+        db     = get_db()
+        cursor = db.cursor(dictionary=True)
+        # Fetch eb_id (needed to insert into daily_ebmc_attendance)
+        cursor.execute(Q.GET_ATTENDANCE_EB_ID, (atten_id,))
+        row = cursor.fetchone()
+        if not row:
+            cursor.close(); db.close()
+            return jsonify({'status': 'error',
+                            'message': f'Attendance id {atten_id} not found'}), 404
+        eb_id = row['eb_id']
+        # 1) Update the attendance row
+        cursor.execute(Q.UPDATE_ATTENDANCE,
+                       (att_type, department_id, designation_id,
+                        working_hours, idle_hours, atten_id))
+        # 2) Mark existing machine rows for this attendance as inactive
+        cursor.execute(Q.DEACTIVATE_MACHINE_ATTENDANCE, (atten_id,))
+        # 3) Insert new active machine rows
+        if isinstance(machine_ids, list):
+            for mc_id in machine_ids:
+                try:
+                    mc_id_int = int(mc_id)
+                except (TypeError, ValueError):
+                    continue
+                if mc_id_int <= 0:
+                    continue
+                cursor.execute(Q.INSERT_MACHINE_ATTENDANCE,
+                               (atten_id, eb_id, mc_id_int))
+        db.commit()
+        cursor.close()
+        db.close()
+        print(f'[ATT-UPDATE] id={atten_id} type={att_type} dept={department_id} '
+              f'desig={designation_id} wh={working_hours} ih={idle_hours} '
+              f'machines={machine_ids}')
+        return jsonify({
+            'status':         'success',
+            'message':        'Attendance updated',
+            'attendance_id':  atten_id,
+            'machines_saved': len([m for m in (machine_ids or []) if m])
+        })
+    except Exception as e:
+        print(f'X Update attendance error: {str(e)}')
+        return jsonify({'status': 'error', 'message': str(e)}), 500

@@ -182,7 +182,7 @@ def dashboard_stats():
 
         # Query for all departments (master list)
         master_query = """
-            		       SELECT sdm.sub_dept_id AS department_id,
+            	SELECT sdm.sub_dept_id AS department_id,
                    sdm.sub_dept_desc AS department_name,
                    0  AS total_employees,
                    COUNT( da.eb_id) AS present
@@ -255,6 +255,7 @@ def dashboard_stats():
                 "present_manual": present_manual,
                 "total_absent": total_absent,
                 "department_wise": department_wise,
+                "department_present": department_present,
             }
         )
 

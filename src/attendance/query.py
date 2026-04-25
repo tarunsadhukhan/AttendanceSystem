@@ -15,6 +15,29 @@ INSERT_MACHINE_ATTENDANCE = """
     VALUES (%s, %s, %s,   1)
 """
 
+# Update attendance row (Edit Attendance dialog)
+UPDATE_ATTENDANCE = """
+    UPDATE daily_attendance
+       SET attendance_type       = %s,
+           worked_department_id  = %s,
+           worked_designation_id = %s,
+           working_hours         = %s,
+           idle_hours            = %s
+     WHERE daily_atten_id = %s
+"""
+
+# Mark all machine rows for an attendance as inactive (used before re-inserting new selection)
+DEACTIVATE_MACHINE_ATTENDANCE = """
+    UPDATE daily_ebmc_attendance
+       SET is_active = 0
+     WHERE daily_atten_id = %s
+"""
+
+# Get eb_id for an attendance (used by update endpoint to insert machine rows)
+GET_ATTENDANCE_EB_ID = """
+    SELECT eb_id FROM daily_attendance WHERE daily_atten_id = %s
+"""
+
 GET_TODAY_REPORT = """
     SELECT o.emp_code,
            CONCAT(p.first_name, ' ', COALESCE(p.middle_name, ''), ' ', COALESCE(p.last_name, '')) AS name,
@@ -116,4 +139,3 @@ GET_PRESENT_BY_DEPT = """
     WHERE da.attendance_date = %s
     GROUP BY o.sub_dept_id
 """
-
