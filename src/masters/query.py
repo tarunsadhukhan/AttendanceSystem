@@ -68,7 +68,7 @@ GET_ALL_COMPANIES = """
         co_id,
         co_name,
         co_logo
-    FROM co_mst cm where cm.co_id<=2
+    FROM co_mst cm where cm.co_id in (2,153)
     ORDER BY co_name
 """
 

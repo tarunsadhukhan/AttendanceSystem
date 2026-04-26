@@ -5,6 +5,7 @@ from src.auth.auth import auth_bp
 from src.attendance.attendance import attendance_bp
 from src.config import get_config_object
 from src.dashboard.dashboard import dashboard_bp
+from src.dashboard.attendance_dashboard import attendance_dashboard_bp
 from src.employees.employees import employees_bp
 from src.masters.company_branch import company_branch_bp
 from src.masters.departments import departments_bp
@@ -30,6 +31,7 @@ def create_app(config_object=None):
 	app.register_blueprint(auth_bp)
 	app.register_blueprint(attendance_bp)
 	app.register_blueprint(dashboard_bp)
+	app.register_blueprint(attendance_dashboard_bp)
 	app.register_blueprint(employees_bp)
 
 	app.register_blueprint(company_branch_bp)

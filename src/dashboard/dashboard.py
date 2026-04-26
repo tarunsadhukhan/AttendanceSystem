@@ -118,7 +118,7 @@ def dashboard_stats():
                 SELECT COUNT( da.eb_id) AS cnt
                 FROM daily_attendance da
                 WHERE da.attendance_date = %s
-                  AND da.attendance_source = 'Face'
+                  AND da.attendance_source IN ( 'Face','BIO')
                   AND da.branch_id = %s
                 """,
                 (stat_date, branch_id),
@@ -130,7 +130,7 @@ def dashboard_stats():
                 FROM daily_attendance da
                 JOIN hrms_ed_official_details o ON da.eb_id = o.eb_id
                 WHERE da.attendance_date = %s
-                  AND da.attendance_source = 'Face'
+                  AND da.attendance_source IN ( 'Face','BIO')
                   AND o.co_id = %s
                 """,
                 (stat_date, co_id),
@@ -140,7 +140,7 @@ def dashboard_stats():
                 """
                 SELECT COUNT( eb_id) AS cnt
                 FROM daily_attendance
-                WHERE attendance_date = %s AND attendance_source = 'Face'
+                WHERE attendance_date = %s AND attendance_source IN ( 'Face','BIO')
                 """,
                 (stat_date,),
             )
