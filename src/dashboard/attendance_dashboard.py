@@ -237,6 +237,50 @@ def attendance_dashboard():
             'over_30_days':   bucket_over_30,
         }
 
+        # ─────────────────────────────────────────────────────────────
+        # 5. Man vs Machine – last 7 days from view vw_man_machine
+        #    total_hands  = hands_a  + hands_b  + hands_c
+        #    total_target = thands_a + thands_b + thands_c
+        # ─────────────────────────────────────────────────────────────
+        mm_from_date = stat_date - timedelta(days=6)
+        mm_where = ''
+        mm_params = []
+        if branch_id:
+            mm_where = ' AND vmm.branch_id = %s'
+            mm_params.append(branch_id)
+        # NOTE: vw_man_machine has NO co_id column → cannot filter by co_id
+
+        try:
+            cursor.execute(
+                f"""
+                SELECT vmm.attendance_date AS d,
+                       COALESCE(SUM(IFNULL(vmm.hands_a,0)  + IFNULL(vmm.hands_b,0)  + IFNULL(vmm.hands_c,0)),  0) AS total_hands,
+                       COALESCE(SUM(IFNULL(vmm.thands_a,0) + IFNULL(vmm.thands_b,0) + IFNULL(vmm.thands_c,0)), 0) AS total_target
+                  FROM vw_man_machine vmm
+                 WHERE vmm.attendance_date BETWEEN %s AND %s
+                   {mm_where}
+                 GROUP BY vmm.attendance_date
+                """,
+                tuple([mm_from_date, stat_date] + mm_params),
+            )
+            mm_rows = cursor.fetchall()
+        except Exception as mm_err:
+            print(f"vw_man_machine query failed: {mm_err}")
+            mm_rows = []
+
+        hands_by_day  = {r['d']: float(r['total_hands']  or 0) for r in mm_rows}
+        target_by_day = {r['d']: float(r['total_target'] or 0) for r in mm_rows}
+
+        man_machine_last_7_days = []
+        for i in range(7):
+            d = mm_from_date + timedelta(days=i)
+            man_machine_last_7_days.append({
+                'date':         d.strftime('%Y-%m-%d'),
+                'label':        d.strftime('%d/%m'),
+                'total_hands':  round(hands_by_day.get(d, 0.0), 2),
+                'total_target': round(target_by_day.get(d, 0.0), 2),
+            })
+        print(f"Man vs Machine - last 7 days: {man_machine_last_7_days}")
         cursor.close()
         db.close()
 
@@ -245,10 +289,11 @@ def attendance_dashboard():
             'date': stat_date_str,
             'branch_id': branch_id,
             'co_id': co_id,
-            'today_attendance':      today_attendance,
-            'wages_last_7_days':     wages_last_7_days,
-            'last_7_days_present':   last_7_days_present,
-            'absent_buckets':        absent_buckets,
+            'today_attendance':         today_attendance,
+            'wages_last_7_days':        wages_last_7_days,
+            'last_7_days_present':      last_7_days_present,
+            'absent_buckets':           absent_buckets,
+            'man_machine_last_7_days':  man_machine_last_7_days,
         })
 
     except Exception as e:
