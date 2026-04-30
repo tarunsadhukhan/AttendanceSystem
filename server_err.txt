@@ -1,0 +1,6 @@
+Traceback (most recent call last):
+  File "E:\sjm\AttendanceSystem\app.py", line 2, in <module>
+    from src import create_app
+  File "E:\sjm\AttendanceSystem\src\__init__.py", line 49
+    app.register_blueprint(doff_bp)
+TabError: inconsistent use of tabs and spaces in indentation

@@ -1,0 +1,81 @@
+WARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5051
+ * Running on http://192.168.0.223:5051
+Press CTRL+C to quit
+ * Restarting with stat
+ * Debugger is active!
+ * Debugger PIN: 627-012-490
+127.0.0.1 - - [30/Apr/2026 10:09:09] "POST /weight-transactions HTTP/1.1" 404 -
+ * Detected change in 'E:\\sjm\\AttendanceSystem\\src\\weight\\weight.py', reloading
+ * Restarting with stat
+ * Debugger is active!
+ * Debugger PIN: 627-012-490
+127.0.0.1 - - [30/Apr/2026 10:11:39] "POST /weight-transactions HTTP/1.1" 200 -
+127.0.0.1 - - [30/Apr/2026 10:12:08] "GET /weight-transactions?branch_id=1&date=2026-04-30 HTTP/1.1" 200 -
+192.168.0.113 - - [30/Apr/2026 10:13:42] "POST /login HTTP/1.1" 200 -
+192.168.0.113 - - [30/Apr/2026 10:13:43] "GET /masters/get_company HTTP/1.1" 200 -
+192.168.0.113 - - [30/Apr/2026 10:13:43] "GET /masters/get_branch?company_id=153 HTTP/1.1" 200 -
+192.168.0.113 - - [30/Apr/2026 10:13:43] "GET /dashboard-stats?date=2026-04-30 HTTP/1.1" 200 -
+192.168.0.113 - - [30/Apr/2026 10:13:43] "GET /dashboard-stats?date=2026-04-30 HTTP/1.1" 200 -
+192.168.0.113 - - [30/Apr/2026 10:13:43] "GET /dashboard-stats?date=2026-04-30 HTTP/1.1" 200 -
+192.168.0.113 - - [30/Apr/2026 10:13:43] "GET /shifts?branch_id=103 HTTP/1.1" 200 -
+192.168.0.113 - - [30/Apr/2026 10:13:44] "GET /dashboard-stats?date=2026-04-30&branch_id=103 HTTP/1.1" 200 -
+192.168.0.113 - - [30/Apr/2026 10:13:49] "GET /spells HTTP/1.1" 200 -
+192.168.0.113 - - [30/Apr/2026 10:13:49] "GET /doff/qualities HTTP/1.1" 200 -
+192.168.0.113 - - [30/Apr/2026 10:13:49] "GET /doff/trollies HTTP/1.1" 200 -
+192.168.0.113 - - [30/Apr/2026 10:13:49] "GET /doff/machines HTTP/1.1" 200 -
+192.168.0.113 - - [30/Apr/2026 10:13:50] "GET /doff-transactions?date=2026-04-30 HTTP/1.1" 200 -
+192.168.0.113 - - [30/Apr/2026 10:13:54] "GET /doff/last-by-machine?mc_id=2941 HTTP/1.1" 200 -
+192.168.0.113 - - [30/Apr/2026 10:13:54] "GET /doff/last-by-machine?mc_id=2941 HTTP/1.1" 200 -
+192.168.0.113 - - [30/Apr/2026 10:13:54] "GET /doff/last-emp?date=2026-04-30&spell_id=91 HTTP/1.1" 200 -
+192.168.0.113 - - [30/Apr/2026 10:13:54] "GET /doff/last-emp?date=2026-04-30&spell_id=91 HTTP/1.1" 200 -
+192.168.0.113 - - [30/Apr/2026 10:14:11] "GET /doff/last-by-machine?mc_id=2941 HTTP/1.1" 200 -
+192.168.0.113 - - [30/Apr/2026 10:14:11] "GET /doff/last-by-machine?mc_id=2941 HTTP/1.1" 200 -
+192.168.0.113 - - [30/Apr/2026 10:14:11] "GET /doff/last-emp?date=2026-04-30&spell_id=91 HTTP/1.1" 200 -
+192.168.0.113 - - [30/Apr/2026 10:14:11] "GET /doff/last-emp?date=2026-04-30&spell_id=91 HTTP/1.1" 200 -
+192.168.0.113 - - [30/Apr/2026 10:14:26] "GET /employees/search?q=10207 HTTP/1.1" 200 -
+192.168.0.113 - - [30/Apr/2026 10:14:27] "GET /employees/search?q=10207 HTTP/1.1" 200 -
+192.168.0.113 - - [30/Apr/2026 10:14:27] "GET /employees/search?q=10207 HTTP/1.1" 200 -
+192.168.0.113 - - [30/Apr/2026 10:14:55] "GET /doff/last-by-machine?mc_id=2941 HTTP/1.1" 200 -
+192.168.0.113 - - [30/Apr/2026 10:14:55] "GET /doff/last-by-machine?mc_id=2941 HTTP/1.1" 200 -
+192.168.0.113 - - [30/Apr/2026 10:14:55] "GET /doff/last-emp?date=2026-04-30&spell_id=91 HTTP/1.1" 200 -
+192.168.0.113 - - [30/Apr/2026 10:14:55] "GET /doff/last-emp?date=2026-04-30&spell_id=91 HTTP/1.1" 200 -
+192.168.0.113 - - [30/Apr/2026 10:15:24] "GET /spells HTTP/1.1" 200 -
+192.168.0.113 - - [30/Apr/2026 10:15:25] "GET /doff/qualities HTTP/1.1" 200 -
+192.168.0.113 - - [30/Apr/2026 10:15:25] "GET /doff/trollies HTTP/1.1" 200 -
+192.168.0.113 - - [30/Apr/2026 10:15:25] "GET /doff/machines HTTP/1.1" 200 -
+192.168.0.113 - - [30/Apr/2026 10:15:25] "GET /spells HTTP/1.1" 200 -
+192.168.0.113 - - [30/Apr/2026 10:15:25] "GET /doff-transactions?date=2026-04-30 HTTP/1.1" 200 -
+192.168.0.113 - - [30/Apr/2026 10:15:25] "GET /doff/qualities HTTP/1.1" 200 -
+192.168.0.113 - - [30/Apr/2026 10:15:25] "GET /doff/trollies HTTP/1.1" 200 -
+192.168.0.113 - - [30/Apr/2026 10:15:25] "GET /doff/machines HTTP/1.1" 200 -
+192.168.0.113 - - [30/Apr/2026 10:15:26] "GET /doff-transactions?date=2026-04-30 HTTP/1.1" 200 -
+192.168.0.113 - - [30/Apr/2026 10:16:11] "POST /login HTTP/1.1" 200 -
+192.168.0.113 - - [30/Apr/2026 10:16:11] "GET /masters/get_company HTTP/1.1" 200 -
+192.168.0.113 - - [30/Apr/2026 10:16:12] "GET /masters/get_branch?company_id=153 HTTP/1.1" 200 -
+192.168.0.113 - - [30/Apr/2026 10:16:12] "GET /dashboard-stats?date=2026-04-30 HTTP/1.1" 200 -
+192.168.0.113 - - [30/Apr/2026 10:16:12] "GET /dashboard-stats?date=2026-04-30 HTTP/1.1" 200 -
+192.168.0.113 - - [30/Apr/2026 10:16:12] "GET /dashboard-stats?date=2026-04-30 HTTP/1.1" 200 -
+192.168.0.113 - - [30/Apr/2026 10:16:12] "GET /shifts?branch_id=103 HTTP/1.1" 200 -
+192.168.0.113 - - [30/Apr/2026 10:16:12] "GET /dashboard-stats?date=2026-04-30&branch_id=103 HTTP/1.1" 200 -
+192.168.0.113 - - [30/Apr/2026 10:16:18] "GET /spells HTTP/1.1" 200 -
+192.168.0.113 - - [30/Apr/2026 10:16:19] "GET /doff/qualities HTTP/1.1" 200 -
+192.168.0.113 - - [30/Apr/2026 10:16:19] "GET /doff/trollies HTTP/1.1" 200 -
+192.168.0.113 - - [30/Apr/2026 10:16:19] "GET /doff/machines HTTP/1.1" 200 -
+192.168.0.113 - - [30/Apr/2026 10:16:20] "GET /doff-transactions?date=2026-04-30 HTTP/1.1" 200 -
+ * Detected change in 'E:\\sjm\\AttendanceSystem\\src\\doff\\doff.py', reloading
+ * Restarting with stat
+ * Debugger is active!
+ * Debugger PIN: 627-012-490
+ * Detected change in 'E:\\sjm\\AttendanceSystem\\src\\doff\\doff.py', reloading
+ * Restarting with stat
+Traceback (most recent call last):
+  File "E:\sjm\AttendanceSystem\app.py", line 2, in <module>
+    from src import create_app
+  File "E:\sjm\AttendanceSystem\src\__init__.py", line 18, in <module>
+    from src.doff.doff import doff_bp
+  File "E:\sjm\AttendanceSystem\src\doff\doff.py", line 62
+    sql=
+        ^
+SyntaxError: invalid syntax

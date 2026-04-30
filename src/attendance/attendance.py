@@ -496,6 +496,192 @@ def attendance_photo(att_id):
 # -- Update Attendance (Edit Attendance dialog) --------------------------
 # Updates an existing daily_attendance row and re-syncs daily_ebmc_attendance
 # (marks all existing machine rows as is_active=0, then inserts new machines).
+# ── Employee-wise Attendance Report ─────────────────────────────────────
+@attendance_bp.route('/emp-wise-attendance', methods=['GET'])
+def emp_wise_attendance():
+    try:
+        from collections import defaultdict
+        from datetime import date as date_cls, timedelta
+
+        from_date      = request.args.get('from_date')
+        to_date        = request.args.get('to_date')
+        spell_id       = request.args.get('spell_id',       type=int)
+        dept_id        = request.args.get('dept_id',        type=int)
+        designation_id = request.args.get('designation_id', type=int)
+        att_type       = request.args.get('att_type', '').strip()
+        report_type    = request.args.get('report_type', 'date_wise').strip()
+        branch_id      = request.args.get('branch_id',      type=int)
+
+        if not from_date or not to_date:
+            return jsonify({'status': 'error', 'message': 'from_date and to_date are required'}), 400
+
+        db     = get_db()
+        cursor = db.cursor(dictionary=True)
+
+        spell_name_filter = None
+        if spell_id:
+            cursor.execute("SELECT spell_name FROM spell_mst WHERE spell_id = %s", (spell_id,))
+            row = cursor.fetchone()
+            spell_name_filter = row['spell_name'] if row else None
+
+        fd = datetime.strptime(from_date, '%Y-%m-%d').date()
+        td = datetime.strptime(to_date,   '%Y-%m-%d').date()
+
+        if report_type == 'monthly':
+            periods = []
+            cur_d = date_cls(fd.year, fd.month, 1)
+            while cur_d <= td:
+                next_month = date_cls(cur_d.year + (cur_d.month // 12),
+                                      (cur_d.month % 12) + 1, 1) if cur_d.month < 12 \
+                             else date_cls(cur_d.year + 1, 1, 1)
+                periods.append({'label': cur_d.strftime('%b-%Y'),
+                                 'from': cur_d.strftime('%Y-%m-%d'),
+                                 'to': (next_month - timedelta(days=1)).strftime('%Y-%m-%d')})
+                cur_d = next_month
+        elif report_type == 'fn_wise':
+            try:
+                cursor.execute("""
+                    SELECT fne_name,
+                           DATE_FORMAT(from_date, '%%Y-%%m-%%d') AS `from`,
+                           DATE_FORMAT(to_date,   '%%Y-%%m-%%d') AS `to`
+                    FROM fne_master
+                    WHERE to_date >= %s AND from_date <= %s
+                    ORDER BY from_date
+                """, (from_date, to_date))
+                fne_rows = cursor.fetchall()
+            except Exception:
+                fne_rows = []
+            if fne_rows:
+                periods = [{'label': r['fne_name'], 'from': r['from'], 'to': r['to']} for r in fne_rows]
+            else:
+                periods = []
+                cur_d = fd
+                while cur_d <= td:
+                    end_d = min(cur_d + timedelta(days=14), td)
+                    periods.append({'label': cur_d.strftime('%d-%b') + ' to ' + end_d.strftime('%d-%b'),
+                                    'from': cur_d.strftime('%Y-%m-%d'), 'to': end_d.strftime('%Y-%m-%d')})
+                    cur_d = end_d + timedelta(days=1)
+        else:  # date_wise
+            periods = []
+            cur_d = fd
+            while cur_d <= td:
+                periods.append({'label': cur_d.strftime('%d-%b'),
+                                 'from': cur_d.strftime('%Y-%m-%d'),
+                                 'to':   cur_d.strftime('%Y-%m-%d')})
+                cur_d += timedelta(days=1)
+
+        emp_sql = """
+            SELECT DISTINCT o.eb_id,
+                   COALESCE(o.emp_code, '') AS emp_code,
+                   TRIM(CONCAT(COALESCE(p.first_name,''), ' ',
+                               COALESCE(p.middle_name,''), ' ',
+                               COALESCE(p.last_name,''))) AS emp_name,
+                   COALESCE(s.sub_dept_desc, '') AS dept_name,
+                   COALESCE(d.desig, '')          AS desig_name
+            FROM hrms_ed_official_details o
+            LEFT JOIN hrms_ed_personal_details p ON o.eb_id = p.eb_id
+            LEFT JOIN sub_dept_mst s        ON o.sub_dept_id  = s.sub_dept_id
+            LEFT JOIN designation_mst d     ON o.designation_id = d.designation_id
+            WHERE (o.active IS NULL OR o.active != 0)
+        """
+        emp_params = []
+        if branch_id:
+            emp_sql += " AND o.branch_id = %s"
+            emp_params.append(branch_id)
+        if dept_id:
+            emp_sql += " AND o.sub_dept_id = %s"
+            emp_params.append(dept_id)
+        if designation_id:
+            emp_sql += " AND o.designation_id = %s"
+            emp_params.append(designation_id)
+        emp_sql += " ORDER BY o.emp_code"
+
+        cursor.execute(emp_sql, tuple(emp_params))
+        employees = cursor.fetchall()
+
+        att_sql = """
+            SELECT da.eb_id,
+                   DATE_FORMAT(da.attendance_date, '%%Y-%%m-%%d') AS att_date,
+                   SUM(COALESCE(da.working_hours, 0)) AS total_hours
+            FROM daily_attendance da
+            WHERE da.attendance_date BETWEEN %s AND %s
+              AND da.is_active = 1
+        """
+        att_params = [from_date, to_date]
+        if branch_id:
+            att_sql += " AND da.branch_id = %s"
+            att_params.append(branch_id)
+        if spell_name_filter:
+            att_sql += " AND da.spell = %s"
+            att_params.append(spell_name_filter)
+        if att_type:
+            att_sql += " AND da.attendance_type = %s"
+            att_params.append(att_type)
+        if dept_id:
+            att_sql += " AND da.worked_department_id = %s"
+            att_params.append(dept_id)
+        if designation_id:
+            att_sql += " AND da.worked_designation_id = %s"
+            att_params.append(designation_id)
+        att_sql += " GROUP BY da.eb_id, da.attendance_date"
+
+        cursor.execute(att_sql, tuple(att_params))
+        att_rows = cursor.fetchall()
+        cursor.close()
+        db.close()
+
+        att_map = defaultdict(dict)
+        for r in att_rows:
+            hrs = float(r['total_hours'] or 0)
+            att_map[r['eb_id']][r['att_date']] = hrs
+
+        result_rows = []
+        for emp in employees:
+            eb_id    = emp['eb_id']
+            emp_data = att_map.get(eb_id, {})
+            attendance   = {}
+            total_hours  = 0.0
+            days_present = 0
+            for period in periods:
+                pf = datetime.strptime(period['from'], '%Y-%m-%d').date()
+                pt = datetime.strptime(period['to'],   '%Y-%m-%d').date()
+                period_hours = 0.0
+                d = pf
+                while d <= pt:
+                    period_hours += emp_data.get(d.strftime('%Y-%m-%d'), 0.0)
+                    d += timedelta(days=1)
+                if period_hours > 0:
+                    val = int(period_hours) if period_hours == int(period_hours) else round(period_hours, 1)
+                    attendance[period['label']] = val
+                    total_hours += period_hours
+                    days_present += 1
+                else:
+                    attendance[period['label']] = ''
+            result_rows.append({
+                'emp_code':      emp['emp_code'],
+                'emp_name':      emp['emp_name'],
+                'dept':          emp['dept_name'],
+                'designation':   emp['desig_name'],
+                'attendance':    attendance,
+                'total_hours':   round(total_hours, 1),
+                'total_present': days_present,
+                'total_absent':  len(periods) - days_present,
+            })
+
+        return jsonify({
+            'status':          'success',
+            'report_type':     report_type,
+            'from_date':       from_date,
+            'to_date':         to_date,
+            'columns':         [p['label'] for p in periods],
+            'total_employees': len(result_rows),
+            'employees':       result_rows,
+        })
+    except Exception as e:
+        print(f'[EMP-WISE-ATT] error: {str(e)}')
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
 @attendance_bp.route('/attendance/<int:atten_id>', methods=['PUT'])
 def update_attendance(atten_id):
     try:

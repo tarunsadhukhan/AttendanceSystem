@@ -14,6 +14,9 @@ from src.masters.machines import machines_bp
 from src.masters.occupations import occupations_bp
 from src.masters.shifts import shifts_bp
 from src.onboarding.onboarding import onboarding_bp
+from src.leave.leave import leave_bp
+from src.doff.doff import doff_bp
+from src.weight.weight import weight_bp
 
 
 def create_app(config_object=None):
@@ -42,6 +45,9 @@ def create_app(config_object=None):
 	app.register_blueprint(shifts_bp)
 
 	app.register_blueprint(onboarding_bp)
+	app.register_blueprint(leave_bp)
+	app.register_blueprint(doff_bp)
+	app.register_blueprint(weight_bp)
 
 	return app
 

@@ -37,7 +37,6 @@ def get_employees():
         db.close()
 
         for r in rows:
-            r['photo_base64'] = None
             if r.get('photo_html'):
                 match = re.search(r'base64,([^"]+)', r['photo_html'])
                 if match:
@@ -65,8 +64,7 @@ def get_employee_by_code(emp_code):
         db.close()
 
         if not employee:
-            return jsonify({"status": "error",
-                            "message": f"Employee code '{emp_code}' not found!"}), 404
+            return jsonify({"status": "error", "message": "Employee not found"}), 404
 
         return jsonify({
             "status":           "success",
@@ -269,3 +267,45 @@ def delete_employee(emp_id):
         return jsonify({"status": "success", "message": "Employee deleted!"})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
+# -- Search employees by emp_code or name --------------------------------------
+@employees_bp.route('/employees/search', methods=['GET'])
+def search_employees():
+    """Search employees by emp_code or name (partial match), optionally filtered by branch_id."""
+    try:
+        query     = (request.args.get('q') or '').strip()
+        branch_id = request.args.get('branch_id', type=int)
+        if not query:
+            return jsonify({'status': 'error', 'message': 'Search query is required'}), 400
+        db     = get_db()
+        cursor = db.cursor(dictionary=True)
+        like   = f'%{query}%'
+        sql = """
+            SELECT p.eb_id AS id, o.emp_code,
+                   TRIM(CONCAT(
+                       COALESCE(p.first_name,''), ' ',
+                       COALESCE(p.middle_name,''), ' ',
+                       COALESCE(p.last_name,''))) AS name,
+                   o.branch_id,
+                   o.sub_dept_id  AS department_id,
+                   o.designation_id,
+                   NULL           AS photo_html
+            FROM hrms_ed_personal_details p
+            INNER JOIN hrms_ed_official_details o ON p.eb_id = o.eb_id
+            WHERE (p.active IS NULL OR p.active != 0)
+              AND (o.emp_code LIKE %s
+                   OR p.first_name  LIKE %s
+                   OR p.last_name   LIKE %s
+                   OR CONCAT(p.first_name,' ',COALESCE(p.last_name,'')) LIKE %s)
+        """
+        params = [like, like, like, like]
+        if branch_id:
+            sql += " AND o.branch_id = %s"
+            params.append(branch_id)
+        sql += " ORDER BY p.first_name LIMIT 20"
+        cursor.execute(sql, tuple(params))
+        rows = cursor.fetchall()
+        cursor.close()
+        db.close()
+        return jsonify({'status': 'success', 'data': rows, 'employees': rows, 'total': len(rows)})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
