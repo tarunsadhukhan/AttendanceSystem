@@ -6,7 +6,12 @@ GET_EMPLOYEE_BY_CODE = """
            o.designation_id,
            o.branch_id,
            s.sub_dept_desc AS department_name,
-           d.desig         AS designation_name
+           d.desig         AS designation_name,
+           (SELECT f.photo_html
+              FROM employee_face_mst f
+             WHERE f.eb_id = p.eb_id AND f.active = 1
+             ORDER BY f.updated_date_time DESC, f.emp_face_id DESC
+             LIMIT 1)      AS photo_html
     FROM hrms_ed_official_details o
     INNER JOIN hrms_ed_personal_details p ON o.eb_id = p.eb_id
     LEFT JOIN sub_dept_mst    s ON o.sub_dept_id    = s.sub_dept_id

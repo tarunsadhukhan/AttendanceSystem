@@ -2,7 +2,7 @@
 
 Tables (sjm database):
   - daily_doff_tbl       (header rows, columns: daily_doff_tbl_id, doff_date, spell,
-                          mc_id, quality_id, eb_id, trolly_id, gross_weight,
+                          mc_id, quality_id, trolly_id, gross_weight,
                           tare_weight, net_weight, active, branch_id, updated_by,
                           updated_date_time, weight_type)
   - spinning_quality_mst (spg_quality_mst_id, spg_quality, ...)
@@ -33,25 +33,6 @@ def _to_str(v):
     return str(v)
 
 
-def _emp_name_by_eb(cursor, eb_id):
-    if not eb_id:
-        return None, None
-    cursor.execute("""
-        SELECT o.emp_code,
-               TRIM(CONCAT(COALESCE(p.first_name,''),' ',
-                           COALESCE(p.middle_name,''),' ',
-                           COALESCE(p.last_name,''))) AS emp_name
-        FROM hrms_ed_official_details o
-        LEFT JOIN hrms_ed_personal_details p ON p.eb_id = o.eb_id
-        WHERE o.eb_id = %s
-        LIMIT 1
-    """, (eb_id,))
-    row = cursor.fetchone()
-    if not row:
-        return None, None
-    return row.get('emp_code'), row.get('emp_name')
-
-
 # ── GET /spells ──────────────────────────────────────────────────────────────
 
 @doff_bp.route('/spells', methods=['GET'])
@@ -60,16 +41,23 @@ def get_spells():
         db = get_db()
         cur = db.cursor(dictionary=True)
         branch_id = request.args.get('branch_id', type=int)
-        sql="""
-            SELECT spell_id, spell_name
-            FROM spell_mst
-            WHERE (status IS NULL OR status = 1)""" 
+        print('Received branch_id for spells:', branch_id)
         params = []
         if branch_id:
-            # machine_mst doesn't have branch_id directly; ignore filter
-            pass
+            sql = """
+            SELECT sm.spell_id, sm.spell_name
+            FROM spell_mst sm
+            JOIN shift_mst sh ON sh.shift_id = sm.shift_id
+            WHERE (sm.status IS NULL OR sm.status = 1)
+              AND sh.branch_id = %s"""
+            params.append(branch_id)
+        else:
+            sql = """
+            SELECT spell_id, spell_name
+            FROM spell_mst
+            WHERE (status IS NULL OR status = 1)"""
         sql += " ORDER BY spell_name"
-
+        print('Executing SQL:', sql, 'with params:', params)
             
         try:
             cur.execute(sql, tuple(params))
@@ -123,9 +111,10 @@ def get_doff_qualities():
         db = get_db()
         cur = db.cursor(dictionary=True)
         sql = """
-            SELECT spg_quality_mst_id AS quality_id,
-                   spg_quality        AS quality_name
-            FROM spinning_quality_mst
+               SELECT spg_quality_mst_id AS quality_id,
+                   concat(stm.spg_type_name,'-',spg_quality,' ',sqm.no_of_spindles,' Spindles'  )        AS quality_name 
+            FROM spinning_quality_mst sqm
+			left join spinning_type_mst stm on stm.spg_type_mst_id =sqm.spg_type_id 
             WHERE 1=1
         """
         params = []
@@ -204,11 +193,6 @@ def list_doff_transactions():
                    t.trolly_name,
                    t.trolly_weight,
                    t.busket_weight        AS bucket_weight,
-                   d.eb_id,
-                   o.emp_code,
-                   TRIM(CONCAT(COALESCE(p.first_name,''),' ',
-                               COALESCE(p.middle_name,''),' ',
-                               COALESCE(p.last_name,''))) AS emp_name,
                    d.gross_weight,
                    d.tare_weight,
                    d.net_weight,
@@ -221,8 +205,6 @@ def list_doff_transactions():
             LEFT JOIN machine_mst          m  ON m.machine_id          = d.mc_id
             LEFT JOIN spinning_quality_mst q  ON q.spg_quality_mst_id  = d.quality_id
             LEFT JOIN trolly_mst           t  ON t.trolly_id           = d.trolly_id
-            LEFT JOIN hrms_ed_official_details o ON o.eb_id            = d.eb_id
-            LEFT JOIN hrms_ed_personal_details  p ON p.eb_id            = d.eb_id
             WHERE (d.active IS NULL OR d.active = 1)
         """
         params = []
@@ -236,8 +218,11 @@ def list_doff_transactions():
             sql += " AND d.mc_id = %s";     params.append(mc_id)
         sql += " ORDER BY d.doff_date DESC, d.daily_doff_tbl_id DESC"
 
+        print('GET /doff-transactions SQL:', sql)
+        print('GET /doff-transactions params:', params)
         cur.execute(sql, tuple(params))
         rows = cur.fetchall()
+        print('GET /doff-transactions row count:', len(rows))
 
         out = []
         for r in rows:
@@ -297,42 +282,6 @@ def get_doff_last_by_machine():
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 
-# ── GET /doff/last-emp ───────────────────────────────────────────────────────
-
-@doff_bp.route('/doff/last-emp', methods=['GET'])
-def get_doff_last_emp():
-    """Return last employee used for a (date, spell_id) combination."""
-    try:
-        date_q   = request.args.get('date')
-        spell_id = request.args.get('spell_id', type=int)
-        if not date_q or not spell_id:
-            return jsonify({'status': 'error',
-                            'message': 'date and spell_id required'}), 400
-
-        db = get_db()
-        cur = db.cursor(dictionary=True)
-        cur.execute("""
-            SELECT d.eb_id
-            FROM daily_doff_tbl d
-            WHERE d.doff_date = %s AND d.spell = %s
-            ORDER BY d.daily_doff_tbl_id DESC
-            LIMIT 1
-        """, (date_q, spell_id))
-        row = cur.fetchone() or {}
-        eb_id = row.get('eb_id')
-        emp_code, emp_name = _emp_name_by_eb(cur, eb_id)
-        cur.close(); db.close()
-        return jsonify({
-            'status': 'success',
-            'eb_id':    eb_id,
-            'emp_code': emp_code,
-            'emp_name': emp_name,
-        })
-    except Exception as e:
-        traceback.print_exc()
-        return jsonify({'status': 'error', 'message': str(e)}), 500
-
-
 # ── POST /doff-transactions ──────────────────────────────────────────────────
 
 @doff_bp.route('/doff-transactions', methods=['POST'])
@@ -346,7 +295,6 @@ def save_doff_transaction():
         mc_id        = data.get('mc_id')
         quality_id   = data.get('quality_id')
         trolly_id    = data.get('trolly_id')
-        eb_id        = data.get('eb_id')
         gross_weight = data.get('gross_weight') or 0
         tare_weight  = data.get('tare_weight')  or 0
         net_weight   = data.get('net_weight')
@@ -359,40 +307,48 @@ def save_doff_transaction():
         branch_id    = data.get('branch_id')
         user_id      = data.get('user_id') or 0
 
-        if not doff_date or not spell_id or not mc_id or not eb_id:
+        if not doff_date or not spell_id or not mc_id or not quality_id or not trolly_id or not branch_id:
             return jsonify({'status': 'error',
-                            'message': 'doff_date, spell_id, mc_id and eb_id are required'}), 400
+                            'message': 'doff_date, spell_id, mc_id, quality_id, trolly_id and branch_id are required'}), 400
 
         db = get_db()
         cur = db.cursor()
         now = datetime.now()
 
         if rec_id:
-            cur.execute("""
+            sql = """
                 UPDATE daily_doff_tbl SET
                     doff_date = %s, spell = %s, mc_id = %s, quality_id = %s,
-                    trolly_id = %s, eb_id = %s,
+                    trolly_id = %s,
                     gross_weight = %s, tare_weight = %s, net_weight = %s,
                     weight_type = %s, branch_id = %s,
                     updated_by = %s, updated_date_time = %s
                 WHERE daily_doff_tbl_id = %s
-            """, (doff_date, spell_id, mc_id, quality_id, trolly_id, eb_id,
-                  gross_weight, tare_weight, net_weight, weight_type, branch_id,
-                  user_id, now, rec_id))
+            """
+            params = (doff_date, spell_id, mc_id, quality_id, trolly_id,
+                      gross_weight, tare_weight, net_weight, weight_type, branch_id,
+                      user_id, now, rec_id)
+            print('POST /doff-transactions UPDATE SQL:', sql)
+            print('POST /doff-transactions UPDATE params:', params)
+            cur.execute(sql, params)
             saved_id = rec_id
         else:
-            cur.execute("""
+            sql = """
                 INSERT INTO daily_doff_tbl
-                    (doff_date, spell, mc_id, quality_id, eb_id, trolly_id,
+                    (doff_date, spell, mc_id, quality_id, trolly_id,
                      gross_weight, tare_weight, net_weight, active, branch_id,
                      updated_by, updated_date_time, weight_type)
                 VALUES
-                    (%s, %s, %s, %s, %s, %s,
+                    (%s, %s, %s, %s, %s,
                      %s, %s, %s, 1, %s,
                      %s, %s, %s)
-            """, (doff_date, spell_id, mc_id, quality_id, eb_id, trolly_id,
-                  gross_weight, tare_weight, net_weight, branch_id,
-                  user_id, now, weight_type))
+            """
+            params = (doff_date, spell_id, mc_id, quality_id, trolly_id,
+                      gross_weight, tare_weight, net_weight, branch_id,
+                      user_id, now, weight_type)
+            print('POST /doff-transactions INSERT SQL:', sql)
+            print('POST /doff-transactions INSERT params:', params)
+            cur.execute(sql, params)
             saved_id = cur.lastrowid
 
         db.commit()

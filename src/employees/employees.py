@@ -58,8 +58,11 @@ def get_employee_by_code(emp_code):
 
         db     = get_db()
         cursor = db.cursor(dictionary=True)
+        print(f"[employees.get_employee_by_code] QUERY: {Q.GET_EMPLOYEE_BY_CODE}")
+        print(f"[employees.get_employee_by_code] PARAMS: emp_code={emp_code!r}, branch_id={branch_id!r}")
         cursor.execute(Q.GET_EMPLOYEE_BY_CODE, (emp_code, branch_id))
         employee = cursor.fetchone()
+        print(f"[employees.get_employee_by_code] ROW: {employee}")
         cursor.close()
         db.close()
 
@@ -74,6 +77,7 @@ def get_employee_by_code(emp_code):
             "department":       employee['department_name'] or '',
             "designation":      employee['designation_name'] or '',
             "branch_id":        employee['branch_id'],
+            "photo_html":       employee.get('photo_html'),
             "message":          f"Employee found: {employee['name'].strip()}"
         })
     except Exception as e:

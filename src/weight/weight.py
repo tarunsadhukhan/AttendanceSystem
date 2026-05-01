@@ -1,7 +1,7 @@
 """Weight Entry endpoints.
 
 Auto-created table: weight_tran
-  id, tran_date, branch_id, spell_id, emp_code, emp_name,
+  id, tran_date, branch_id, spell_id,
   gross_weight, tare_weight, net_weight, weight_type, created_by, created_at
 """
 import traceback
@@ -55,7 +55,6 @@ def get_weight_transactions():
         cur.execute(f"""
             SELECT wt.id, wt.tran_date, wt.branch_id,
                    wt.spell_id, s.spell_name,
-                   wt.emp_code, wt.emp_name,
                    wt.gross_weight, wt.tare_weight, wt.net_weight,
                    wt.weight_type, wt.created_at
             FROM weight_tran wt
@@ -84,8 +83,6 @@ def save_weight_transaction():
         branch_id    = data.get('branch_id')
         tran_date    = data.get('tran_date')
         spell_id     = data.get('spell_id')
-        emp_code     = data.get('emp_code')
-        emp_name     = data.get('emp_name')
         gross_weight = data.get('gross_weight', 0)
         tare_weight  = data.get('tare_weight',  0)
         net_weight   = data.get('net_weight',   0)
@@ -102,10 +99,10 @@ def save_weight_transaction():
 
         cur.execute("""
             INSERT INTO weight_tran
-              (tran_date, branch_id, spell_id, emp_code, emp_name,
+              (tran_date, branch_id, spell_id,
                gross_weight, tare_weight, net_weight, weight_type, created_by)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-        """, (tran_date, branch_id, spell_id, emp_code, emp_name,
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+        """, (tran_date, branch_id, spell_id,
               gross_weight, tare_weight, net_weight, weight_type, created_by))
         db.commit()
         new_id = cur.lastrowid
