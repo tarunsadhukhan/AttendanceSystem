@@ -180,27 +180,27 @@ def dashboard_stats():
             )
         present_manual = cursor.fetchone()["cnt"]
 
-        # Query for all departments (master list)
+        # Query departments that have attendance for the selected date+branch.
+        # Driven by daily_attendance so every department with present>0 is included
+        # regardless of how dept_mst.branch_id is mapped.
         master_query = """
-            	SELECT sdm.sub_dept_id AS department_id,
+            SELECT sdm.sub_dept_id  AS department_id,
                    sdm.sub_dept_desc AS department_name,
-                   0  AS total_employees,
-                   COUNT( da.eb_id) AS present
-            FROM sub_dept_mst sdm
-            LEFT JOIN dept_mst dm ON dm.dept_id = sdm.dept_id
-            LEFT JOIN daily_attendance da
-              ON da.worked_department_id  = sdm.sub_dept_id 
-             AND da.attendance_date = %s
-             AND da.is_active = 1
-    
+                   0                AS total_employees,
+                   COUNT(DISTINCT da.eb_id) AS present
+            FROM daily_attendance da
+            INNER JOIN sub_dept_mst sdm
+                    ON sdm.sub_dept_id = da.worked_department_id
+            WHERE da.attendance_date = %s
+              AND da.is_active = 1
         """
         master_params = [stat_date]
 
         if branch_id:
-            master_query += " WHERE dm.branch_id = %s"
+            master_query += " AND da.branch_id = %s"
             master_params.append(branch_id)
         elif co_id:
-            master_query += " WHERE dm.co_id = %s"
+            master_query += " AND da.co_id = %s"
             master_params.append(co_id)
 
         master_query += """

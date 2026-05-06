@@ -1,81 +1,90 @@
 WARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.
  * Running on all addresses (0.0.0.0)
  * Running on http://127.0.0.1:5051
- * Running on http://192.168.0.223:5051
+ * Running on http://192.168.0.219:5051
 Press CTRL+C to quit
  * Restarting with stat
  * Debugger is active!
  * Debugger PIN: 627-012-490
-127.0.0.1 - - [30/Apr/2026 10:09:09] "POST /weight-transactions HTTP/1.1" 404 -
- * Detected change in 'E:\\sjm\\AttendanceSystem\\src\\weight\\weight.py', reloading
- * Restarting with stat
- * Debugger is active!
- * Debugger PIN: 627-012-490
-127.0.0.1 - - [30/Apr/2026 10:11:39] "POST /weight-transactions HTTP/1.1" 200 -
-127.0.0.1 - - [30/Apr/2026 10:12:08] "GET /weight-transactions?branch_id=1&date=2026-04-30 HTTP/1.1" 200 -
-192.168.0.113 - - [30/Apr/2026 10:13:42] "POST /login HTTP/1.1" 200 -
-192.168.0.113 - - [30/Apr/2026 10:13:43] "GET /masters/get_company HTTP/1.1" 200 -
-192.168.0.113 - - [30/Apr/2026 10:13:43] "GET /masters/get_branch?company_id=153 HTTP/1.1" 200 -
-192.168.0.113 - - [30/Apr/2026 10:13:43] "GET /dashboard-stats?date=2026-04-30 HTTP/1.1" 200 -
-192.168.0.113 - - [30/Apr/2026 10:13:43] "GET /dashboard-stats?date=2026-04-30 HTTP/1.1" 200 -
-192.168.0.113 - - [30/Apr/2026 10:13:43] "GET /dashboard-stats?date=2026-04-30 HTTP/1.1" 200 -
-192.168.0.113 - - [30/Apr/2026 10:13:43] "GET /shifts?branch_id=103 HTTP/1.1" 200 -
-192.168.0.113 - - [30/Apr/2026 10:13:44] "GET /dashboard-stats?date=2026-04-30&branch_id=103 HTTP/1.1" 200 -
-192.168.0.113 - - [30/Apr/2026 10:13:49] "GET /spells HTTP/1.1" 200 -
-192.168.0.113 - - [30/Apr/2026 10:13:49] "GET /doff/qualities HTTP/1.1" 200 -
-192.168.0.113 - - [30/Apr/2026 10:13:49] "GET /doff/trollies HTTP/1.1" 200 -
-192.168.0.113 - - [30/Apr/2026 10:13:49] "GET /doff/machines HTTP/1.1" 200 -
-192.168.0.113 - - [30/Apr/2026 10:13:50] "GET /doff-transactions?date=2026-04-30 HTTP/1.1" 200 -
-192.168.0.113 - - [30/Apr/2026 10:13:54] "GET /doff/last-by-machine?mc_id=2941 HTTP/1.1" 200 -
-192.168.0.113 - - [30/Apr/2026 10:13:54] "GET /doff/last-by-machine?mc_id=2941 HTTP/1.1" 200 -
-192.168.0.113 - - [30/Apr/2026 10:13:54] "GET /doff/last-emp?date=2026-04-30&spell_id=91 HTTP/1.1" 200 -
-192.168.0.113 - - [30/Apr/2026 10:13:54] "GET /doff/last-emp?date=2026-04-30&spell_id=91 HTTP/1.1" 200 -
-192.168.0.113 - - [30/Apr/2026 10:14:11] "GET /doff/last-by-machine?mc_id=2941 HTTP/1.1" 200 -
-192.168.0.113 - - [30/Apr/2026 10:14:11] "GET /doff/last-by-machine?mc_id=2941 HTTP/1.1" 200 -
-192.168.0.113 - - [30/Apr/2026 10:14:11] "GET /doff/last-emp?date=2026-04-30&spell_id=91 HTTP/1.1" 200 -
-192.168.0.113 - - [30/Apr/2026 10:14:11] "GET /doff/last-emp?date=2026-04-30&spell_id=91 HTTP/1.1" 200 -
-192.168.0.113 - - [30/Apr/2026 10:14:26] "GET /employees/search?q=10207 HTTP/1.1" 200 -
-192.168.0.113 - - [30/Apr/2026 10:14:27] "GET /employees/search?q=10207 HTTP/1.1" 200 -
-192.168.0.113 - - [30/Apr/2026 10:14:27] "GET /employees/search?q=10207 HTTP/1.1" 200 -
-192.168.0.113 - - [30/Apr/2026 10:14:55] "GET /doff/last-by-machine?mc_id=2941 HTTP/1.1" 200 -
-192.168.0.113 - - [30/Apr/2026 10:14:55] "GET /doff/last-by-machine?mc_id=2941 HTTP/1.1" 200 -
-192.168.0.113 - - [30/Apr/2026 10:14:55] "GET /doff/last-emp?date=2026-04-30&spell_id=91 HTTP/1.1" 200 -
-192.168.0.113 - - [30/Apr/2026 10:14:55] "GET /doff/last-emp?date=2026-04-30&spell_id=91 HTTP/1.1" 200 -
-192.168.0.113 - - [30/Apr/2026 10:15:24] "GET /spells HTTP/1.1" 200 -
-192.168.0.113 - - [30/Apr/2026 10:15:25] "GET /doff/qualities HTTP/1.1" 200 -
-192.168.0.113 - - [30/Apr/2026 10:15:25] "GET /doff/trollies HTTP/1.1" 200 -
-192.168.0.113 - - [30/Apr/2026 10:15:25] "GET /doff/machines HTTP/1.1" 200 -
-192.168.0.113 - - [30/Apr/2026 10:15:25] "GET /spells HTTP/1.1" 200 -
-192.168.0.113 - - [30/Apr/2026 10:15:25] "GET /doff-transactions?date=2026-04-30 HTTP/1.1" 200 -
-192.168.0.113 - - [30/Apr/2026 10:15:25] "GET /doff/qualities HTTP/1.1" 200 -
-192.168.0.113 - - [30/Apr/2026 10:15:25] "GET /doff/trollies HTTP/1.1" 200 -
-192.168.0.113 - - [30/Apr/2026 10:15:25] "GET /doff/machines HTTP/1.1" 200 -
-192.168.0.113 - - [30/Apr/2026 10:15:26] "GET /doff-transactions?date=2026-04-30 HTTP/1.1" 200 -
-192.168.0.113 - - [30/Apr/2026 10:16:11] "POST /login HTTP/1.1" 200 -
-192.168.0.113 - - [30/Apr/2026 10:16:11] "GET /masters/get_company HTTP/1.1" 200 -
-192.168.0.113 - - [30/Apr/2026 10:16:12] "GET /masters/get_branch?company_id=153 HTTP/1.1" 200 -
-192.168.0.113 - - [30/Apr/2026 10:16:12] "GET /dashboard-stats?date=2026-04-30 HTTP/1.1" 200 -
-192.168.0.113 - - [30/Apr/2026 10:16:12] "GET /dashboard-stats?date=2026-04-30 HTTP/1.1" 200 -
-192.168.0.113 - - [30/Apr/2026 10:16:12] "GET /dashboard-stats?date=2026-04-30 HTTP/1.1" 200 -
-192.168.0.113 - - [30/Apr/2026 10:16:12] "GET /shifts?branch_id=103 HTTP/1.1" 200 -
-192.168.0.113 - - [30/Apr/2026 10:16:12] "GET /dashboard-stats?date=2026-04-30&branch_id=103 HTTP/1.1" 200 -
-192.168.0.113 - - [30/Apr/2026 10:16:18] "GET /spells HTTP/1.1" 200 -
-192.168.0.113 - - [30/Apr/2026 10:16:19] "GET /doff/qualities HTTP/1.1" 200 -
-192.168.0.113 - - [30/Apr/2026 10:16:19] "GET /doff/trollies HTTP/1.1" 200 -
-192.168.0.113 - - [30/Apr/2026 10:16:19] "GET /doff/machines HTTP/1.1" 200 -
-192.168.0.113 - - [30/Apr/2026 10:16:20] "GET /doff-transactions?date=2026-04-30 HTTP/1.1" 200 -
- * Detected change in 'E:\\sjm\\AttendanceSystem\\src\\doff\\doff.py', reloading
- * Restarting with stat
- * Debugger is active!
- * Debugger PIN: 627-012-490
- * Detected change in 'E:\\sjm\\AttendanceSystem\\src\\doff\\doff.py', reloading
- * Restarting with stat
-Traceback (most recent call last):
-  File "E:\sjm\AttendanceSystem\app.py", line 2, in <module>
-    from src import create_app
-  File "E:\sjm\AttendanceSystem\src\__init__.py", line 18, in <module>
-    from src.doff.doff import doff_bp
-  File "E:\sjm\AttendanceSystem\src\doff\doff.py", line 62
-    sql=
-        ^
-SyntaxError: invalid syntax
+127.0.0.1 - - [02/May/2026 16:17:27] "GET /dashboard-stats?date=2026-04-15&branch_id=103 HTTP/1.1" 200 -
+192.168.0.235 - - [02/May/2026 16:18:05] "GET /dashboard-stats?date=2026-04-15&branch_id=103 HTTP/1.1" 200 -
+192.168.0.235 - - [02/May/2026 16:18:22] "POST /login HTTP/1.1" 200 -
+192.168.0.235 - - [02/May/2026 16:18:23] "GET /masters/get_company HTTP/1.1" 200 -
+192.168.0.235 - - [02/May/2026 16:18:24] "GET /masters/get_branch?company_id=153 HTTP/1.1" 200 -
+192.168.0.235 - - [02/May/2026 16:18:24] "GET /dashboard-stats?date=2026-05-02 HTTP/1.1" 200 -
+192.168.0.235 - - [02/May/2026 16:18:24] "GET /dashboard-stats?date=2026-05-02 HTTP/1.1" 200 -
+192.168.0.235 - - [02/May/2026 16:18:24] "GET /dashboard-stats?date=2026-05-02 HTTP/1.1" 200 -
+192.168.0.235 - - [02/May/2026 16:18:25] "GET /shifts?branch_id=103 HTTP/1.1" 200 -
+192.168.0.235 - - [02/May/2026 16:18:25] "GET /dashboard-stats?date=2026-05-02&branch_id=103 HTTP/1.1" 200 -
+192.168.0.235 - - [02/May/2026 16:18:33] "GET /dashboard-stats?date=2026-04-15&branch_id=103 HTTP/1.1" 200 -
+192.168.0.235 - - [02/May/2026 16:19:12] "GET /dashboard-stats?date=2026-04-16&branch_id=103 HTTP/1.1" 200 -
+192.168.0.235 - - [02/May/2026 16:19:25] "GET /dashboard-stats?date=2026-04-15&branch_id=103 HTTP/1.1" 200 -
+192.168.0.120 - - [02/May/2026 16:25:01] "GET /dashboard-stats?date=2026-04-09&branch_id=103 HTTP/1.1" 200 -
+192.168.0.120 - - [02/May/2026 16:27:29] "POST /login HTTP/1.1" 200 -
+192.168.0.120 - - [02/May/2026 16:27:30] "GET /masters/get_company HTTP/1.1" 200 -
+192.168.0.120 - - [02/May/2026 16:27:31] "GET /masters/get_branch?company_id=153 HTTP/1.1" 200 -
+192.168.0.120 - - [02/May/2026 16:27:31] "GET /dashboard-stats?date=2026-05-02 HTTP/1.1" 200 -
+192.168.0.120 - - [02/May/2026 16:27:31] "GET /dashboard-stats?date=2026-05-02 HTTP/1.1" 200 -
+192.168.0.120 - - [02/May/2026 16:27:31] "GET /dashboard-stats?date=2026-05-02 HTTP/1.1" 200 -
+192.168.0.120 - - [02/May/2026 16:27:31] "GET /shifts?branch_id=103 HTTP/1.1" 200 -
+192.168.0.120 - - [02/May/2026 16:27:32] "GET /dashboard-stats?date=2026-05-02&branch_id=103 HTTP/1.1" 200 -
+192.168.0.120 - - [02/May/2026 16:27:38] "GET /dashboard-stats?date=2026-04-15&branch_id=103 HTTP/1.1" 200 -
+192.168.0.120 - - [02/May/2026 16:28:08] "GET /employees HTTP/1.1" 500 -
+192.168.0.120 - - [02/May/2026 16:28:08] "GET /designations?branch_id=103 HTTP/1.1" 200 -
+192.168.0.120 - - [02/May/2026 16:28:08] "GET /shifts HTTP/1.1" 200 -
+192.168.0.120 - - [02/May/2026 16:28:08] "GET /departments?branch_id=103 HTTP/1.1" 200 -
+192.168.0.120 - - [02/May/2026 16:30:11] "POST /login HTTP/1.1" 200 -
+192.168.0.120 - - [02/May/2026 16:30:12] "GET /masters/get_company HTTP/1.1" 200 -
+192.168.0.120 - - [02/May/2026 16:30:12] "GET /masters/get_branch?company_id=153 HTTP/1.1" 200 -
+192.168.0.120 - - [02/May/2026 16:30:12] "GET /dashboard-stats?date=2026-05-02 HTTP/1.1" 200 -
+192.168.0.120 - - [02/May/2026 16:30:12] "GET /dashboard-stats?date=2026-05-02 HTTP/1.1" 200 -
+192.168.0.120 - - [02/May/2026 16:30:12] "GET /dashboard-stats?date=2026-05-02 HTTP/1.1" 200 -
+192.168.0.120 - - [02/May/2026 16:30:13] "GET /shifts?branch_id=103 HTTP/1.1" 200 -
+192.168.0.120 - - [02/May/2026 16:30:13] "GET /dashboard-stats?date=2026-05-02&branch_id=103 HTTP/1.1" 200 -
+192.168.0.120 - - [02/May/2026 16:30:18] "GET /dashboard-stats?date=2026-04-15&branch_id=103 HTTP/1.1" 200 -
+192.168.0.120 - - [02/May/2026 16:30:27] "GET /shifts?branch_id=103 HTTP/1.1" 200 -
+192.168.0.120 - - [02/May/2026 16:30:27] "GET /departments?branch_id=103 HTTP/1.1" 200 -
+192.168.0.120 - - [02/May/2026 16:30:29] "GET /attendance-report?from_date=2026-04-15&to_date=2026-04-15&department_id=497&branch_id=103 HTTP/1.1" 200 -
+192.168.0.120 - - [02/May/2026 16:30:29] "GET /designations?branch_id=103&sub_dept_id=497 HTTP/1.1" 200 -
+192.168.0.120 - - [02/May/2026 16:30:29] "GET /designations?branch_id=103&sub_dept_id=497 HTTP/1.1" 200 -
+192.168.0.120 - - [02/May/2026 16:30:30] "GET /machines?designation_id=1692 HTTP/1.1" 200 -
+192.168.0.120 - - [02/May/2026 16:30:30] "GET /machines?designation_id=1692 HTTP/1.1" 200 -
+192.168.0.120 - - [02/May/2026 16:30:32] "GET /designations?branch_id=103&sub_dept_id=497 HTTP/1.1" 200 -
+192.168.0.120 - - [02/May/2026 16:30:32] "GET /designations?branch_id=103&sub_dept_id=497 HTTP/1.1" 200 -
+192.168.0.120 - - [02/May/2026 16:30:32] "GET /designations?branch_id=103&sub_dept_id=497 HTTP/1.1" 200 -
+192.168.0.120 - - [02/May/2026 16:30:32] "GET /machines?designation_id=1692 HTTP/1.1" 200 -
+192.168.0.120 - - [02/May/2026 16:30:32] "GET /machines?designation_id=1692 HTTP/1.1" 200 -
+192.168.0.120 - - [02/May/2026 16:30:33] "GET /designations?branch_id=103&sub_dept_id=497 HTTP/1.1" 200 -
+192.168.0.120 - - [02/May/2026 16:30:33] "GET /machines?designation_id=1692 HTTP/1.1" 200 -
+192.168.0.120 - - [02/May/2026 16:30:33] "GET /designations?branch_id=103&sub_dept_id=497 HTTP/1.1" 200 -
+192.168.0.120 - - [02/May/2026 16:30:34] "GET /machines?designation_id=1692 HTTP/1.1" 200 -
+192.168.0.120 - - [02/May/2026 16:30:34] "GET /machines?designation_id=1692 HTTP/1.1" 200 -
+192.168.0.120 - - [02/May/2026 16:30:36] "GET /dashboard-stats?date=2026-04-15&branch_id=103 HTTP/1.1" 200 -
+192.168.0.120 - - [02/May/2026 16:32:30] "POST /login HTTP/1.1" 200 -
+192.168.0.120 - - [02/May/2026 16:32:31] "GET /masters/get_company HTTP/1.1" 200 -
+192.168.0.120 - - [02/May/2026 16:32:32] "GET /masters/get_branch?company_id=153 HTTP/1.1" 200 -
+192.168.0.120 - - [02/May/2026 16:32:32] "GET /dashboard-stats?date=2026-05-02 HTTP/1.1" 200 -
+192.168.0.120 - - [02/May/2026 16:32:32] "GET /dashboard-stats?date=2026-05-02 HTTP/1.1" 200 -
+192.168.0.120 - - [02/May/2026 16:32:32] "GET /dashboard-stats?date=2026-05-02 HTTP/1.1" 200 -
+192.168.0.120 - - [02/May/2026 16:32:32] "GET /shifts?branch_id=103 HTTP/1.1" 200 -
+192.168.0.120 - - [02/May/2026 16:32:33] "GET /dashboard-stats?date=2026-05-02&branch_id=103 HTTP/1.1" 200 -
+192.168.0.120 - - [02/May/2026 16:32:38] "GET /dashboard-stats?date=2026-04-15&branch_id=103 HTTP/1.1" 200 -
+192.168.0.120 - - [02/May/2026 16:33:06] "GET /spells?branch_id=103 HTTP/1.1" 200 -
+192.168.0.120 - - [02/May/2026 16:33:06] "GET /doff/trollies?branch_id=103 HTTP/1.1" 200 -
+192.168.0.120 - - [02/May/2026 16:33:06] "GET /doff/qualities?branch_id=103 HTTP/1.1" 200 -
+192.168.0.120 - - [02/May/2026 16:33:07] "GET /doff/machines?branch_id=103 HTTP/1.1" 200 -
+192.168.0.120 - - [02/May/2026 16:33:07] "GET /doff-transactions?date=2026-05-02&spell_id=106&branch_id=103 HTTP/1.1" 200 -
+192.168.0.120 - - [02/May/2026 16:33:55] "GET /dashboard-stats?date=2026-04-15&branch_id=103 HTTP/1.1" 200 -
+192.168.0.120 - - [02/May/2026 16:34:01] "GET /dashboard-stats?date=2026-04-16&branch_id=103 HTTP/1.1" 200 -
+192.168.0.120 - - [02/May/2026 16:34:10] "GET /dashboard-stats?date=2026-04-15&branch_id=103 HTTP/1.1" 200 -
+192.168.0.120 - - [02/May/2026 16:34:26] "GET /dashboard-stats?date=2026-04-01&branch_id=103 HTTP/1.1" 200 -
+192.168.0.120 - - [02/May/2026 16:35:24] "POST /login HTTP/1.1" 200 -
+192.168.0.120 - - [02/May/2026 16:35:25] "GET /masters/get_company HTTP/1.1" 200 -
+192.168.0.120 - - [02/May/2026 16:35:26] "GET /dashboard-stats?date=2026-05-02 HTTP/1.1" 200 -
+192.168.0.120 - - [02/May/2026 16:35:26] "GET /masters/get_branch?company_id=153 HTTP/1.1" 200 -
+192.168.0.120 - - [02/May/2026 16:35:26] "GET /dashboard-stats?date=2026-05-02 HTTP/1.1" 200 -
+192.168.0.120 - - [02/May/2026 16:35:26] "GET /dashboard-stats?date=2026-05-02 HTTP/1.1" 200 -
+192.168.0.120 - - [02/May/2026 16:35:27] "GET /shifts?branch_id=103 HTTP/1.1" 200 -
+192.168.0.120 - - [02/May/2026 16:35:27] "GET /dashboard-stats?date=2026-05-02&branch_id=103 HTTP/1.1" 200 -
+192.168.0.120 - - [02/May/2026 16:35:35] "GET /dashboard-stats?date=2026-04-30&branch_id=103 HTTP/1.1" 200 -
+192.168.0.120 - - [02/May/2026 16:35:41] "GET /dashboard-stats?date=2026-04-01&branch_id=103 HTTP/1.1" 200 -

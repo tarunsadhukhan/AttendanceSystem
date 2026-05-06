@@ -1,0 +1,10 @@
+import mysql.connector
+c = mysql.connector.connect(host='13.126.47.172',user='myroot',password='deb#9876',database='sjm',ssl_disabled=True)
+cur = c.cursor()
+cur.execute("DESCRIBE hrms_ed_official_details")
+print("hrms_ed_official_details:")
+for r in cur.fetchall(): print(" ", r[0], r[1])
+print()
+cur.execute("DESCRIBE hrms_ed_personal_details")
+print("hrms_ed_personal_details:")
+for r in cur.fetchall(): print(" ", r[0], r[1])
