@@ -1,19 +1,12 @@
-from db import DB_CONFIG, init_db
+﻿from db import DB_CONFIG, init_db
 from src import create_app
-
-
 app = create_app()
-
-
 if __name__ == '__main__':
     import os
-
     print('Starting MyHrms Flask Server...')
     print(f"Database: {DB_CONFIG['database']} @ {DB_CONFIG['host']}")
     init_db()
-
     port = int(os.getenv('FLASK_PORT', 5051))
     debug = os.getenv('FLASK_DEBUG', 'True').lower() == 'true'
-
     print(f'Server ready at http://0.0.0.0:{port}')
     app.run(host='0.0.0.0', port=port, debug=debug)

@@ -440,8 +440,10 @@ def winding_entry2_quality_shift_report():
                 COALESCE(SUM(CASE WHEN s.spell_name LIKE '%%C%%' THEN w.net_weight ELSE 0 END), 0) AS shift_c,
                 COALESCE(SUM(w.net_weight), 0) AS total
             FROM daily_doff_frames_winding w
+			left join daily_doff_frames_winding ddfw on ddfw.mc_eb_id =w.eb_id and ddfw.tran_date =w.tran_date 
+			and ddfw.spell =w.spell and ddfw.eb_id is null
             LEFT JOIN spell_mst s ON w.spell_id = s.spell_id
-            LEFT JOIN winding_quality_master q ON w.quality_id = q.wng_quality_mst_id
+            LEFT JOIN winding_quality_master q ON ddfw.quality_id = q.wng_quality_mst_id
             WHERE w.tran_date = %s
               AND w.branch_id = %s
               AND w.spg_wdg = 'W'
@@ -1928,5 +1930,52 @@ def winding_entry2_detail():
         return jsonify({'status': 'success', 'summary': out})
     except Exception as e:
         traceback.print_exc()
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+# SPG DOFF ENTRY 1 - QUALITY-WISE SHIFT-WISE REPORT
+@doff_bp.route('/doff/spg1-quality-shift-report', methods=['GET'])
+def get_spg1_quality_shift_report():
+    try:
+        date_str = request.args.get('date')
+        branch_id = request.args.get('branch_id', type=int)
+        if not date_str:
+            return jsonify({'status': 'error', 'message': 'date is required'}), 400
+        if not branch_id:
+            return jsonify({'status': 'error', 'message': 'branch_id is required'}), 400
+        db = get_db()
+        cursor = db.cursor(dictionary=True)
+        sql="""        SELECT
+                COALESCE(concat(spg_type_name,' ',q.spg_quality,' ',q.speed,' RPM') , 'Unknown') AS quality_name,
+                COALESCE(SUM(CASE WHEN s.spell_name LIKE '%A%' THEN d.net_weight ELSE 0 END), 0) AS shift_a,
+                COALESCE(SUM(CASE WHEN s.spell_name LIKE '%B%' THEN d.net_weight ELSE 0 END), 0) AS shift_b,
+                COALESCE(SUM(CASE WHEN s.spell_name LIKE '%C%' THEN d.net_weight ELSE 0 END), 0) AS shift_c,
+                COALESCE(SUM(d.net_weight), 0) AS total
+            FROM daily_doff_tbl d
+            LEFT JOIN spell_mst s ON d.spell = s.spell_id
+			left join daily_doff_frames_winding ddfw on ddfw.tran_date =d.doff_date and ddfw.spell =d.spell 
+			and ddfw.mc_eb_id =d.mc_id and ddfw.active =1 and spg_wdg='S'
+            LEFT JOIN spinning_quality_mst q ON ddfw.quality_id = q.spg_quality_mst_id 
+            left join spinning_type_mst stm on stm.spg_type_mst_id =q.spg_type_id 
+            WHERE d.doff_date = %s AND d.branch_id = %s
+              AND (d.active IS NULL OR d.active = 1)
+            GROUP BY concat(spg_type_name,' ',q.spg_quality,' ',q.speed) ORDER BY concat(spg_type_name,' ',q.spg_quality,' ',q.speed)
+        """
+        query = sql
+        cursor.execute(query, (date_str, branch_id))
+        report_rows = cursor.fetchall()
+        grand_total_a = sum(row['shift_a'] for row in report_rows)
+        grand_total_b = sum(row['shift_b'] for row in report_rows)
+        grand_total_c = sum(row['shift_c'] for row in report_rows)
+        grand_total = sum(row['total'] for row in report_rows)
+        cursor.close()
+        db.close()
+        return jsonify({
+            'status': 'success',
+            'message': 'Quality-wise shift-wise report generated',
+            'report': report_rows,
+            'grand_total': {'shift_a': grand_total_a, 'shift_b': grand_total_b, 'shift_c': grand_total_c, 'total': grand_total}
+        })
+    except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
