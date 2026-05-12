@@ -125,7 +125,7 @@ def get_drawing_opening_meter():
             SELECT closing_meter
             FROM tbl_daily_drawing
             WHERE mc_id = %s
-              AND (tran_date < %s OR (tran_date = %s AND spell_id < %s))
+              AND (tran_date < %s OR (tran_date = %s AND spell_id = %s))
             ORDER BY tran_date DESC, spell_id DESC
             LIMIT 1
         """, (mc_id, date_str, date_str, spell_id))

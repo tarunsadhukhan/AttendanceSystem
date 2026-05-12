@@ -94,9 +94,9 @@ def attendance_dashboard():
 
         psql="""SELECT
                 SUM(CASE WHEN COALESCE(da.attendance_mark,'P') IN ('P','PR','PRESENT')
-                         THEN 1 ELSE 0 END) AS present,
+                         THEN working_hours/8 ELSE 0 END) AS present,
                 SUM(CASE WHEN COALESCE(da.attendance_mark,'')  IN ('L','LV','LEAVE')
-                         THEN 1 ELSE 0 END) AS leaves
+                         THEN working_hours/8 ELSE 0 END) AS leaves
               FROM daily_attendance da
               {join_emp}
              WHERE da.attendance_date = %s
@@ -107,9 +107,9 @@ def attendance_dashboard():
             f"""
             SELECT
                 SUM(CASE WHEN COALESCE(da.attendance_mark,'P') IN ('P','PR','PRESENT')
-                         THEN 1 ELSE 0 END) AS present,
+                         THEN working_hours/8 ELSE 0 END) AS present,
                 SUM(CASE WHEN COALESCE(da.attendance_mark,'')  IN ('L','LV','LEAVE')
-                         THEN 1 ELSE 0 END) AS leaves
+                         THEN working_hours/8 ELSE 0 END) AS leaves
               FROM daily_attendance da
               {join_emp}
              WHERE da.attendance_date = %s
@@ -170,19 +170,20 @@ def attendance_dashboard():
         # 3. Last-7-days present count (line chart)
         # ─────────────────────────────────────────────────────────────
         from_date_7 = stat_date - timedelta(days=6)
-        cursor.execute(
-            f"""
+        sql=f"""
             SELECT da.attendance_date                         AS d,
-                   COUNT(DISTINCT da.eb_id)                   AS present
+                   sum(working_hours/8)                   AS present
               FROM daily_attendance da
-              {join_emp}
              WHERE da.attendance_date BETWEEN %s AND %s
                AND da.is_active = 1
-               AND COALESCE(da.attendance_mark,'P') IN ('P','PR','PRESENT')
+               AND COALESCE(da.attendance_source,'P') IN ('P','PR','BIO')
                {scope_where}
              GROUP BY da.attendance_date
              ORDER BY da.attendance_date ASC
-            """,
+            """
+        print(f"Last 7 days present SQL: {sql} with params {[from_date_7, stat_date] + scope_params}")      
+        cursor.execute(
+            sql,
             tuple([from_date_7, stat_date] + scope_params),
         )
         present_by_day = {row['d']: int(row['present'] or 0) for row in cursor.fetchall()}
@@ -280,7 +281,7 @@ def attendance_dashboard():
                 'total_hands':  round(hands_by_day.get(d, 0.0), 2),
                 'total_target': round(target_by_day.get(d, 0.0), 2),
             })
-        print(f"Man vs Machine - last 7 days: {man_machine_last_7_days}")
+        #print(f"Man vs Machine - last 7 days: {man_machine_last_7_days}")
         cursor.close()
         db.close()
 

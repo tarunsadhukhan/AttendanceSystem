@@ -32,8 +32,8 @@ GET_ALL_EMPLOYEES = """
            o.branch_id,
            s.sub_dept_desc AS department_name,
            d.desig         AS designation_name,
-           COUNT(f.id)        AS face_count,
-           MAX(f.photo_html)  AS photo_html
+           COUNT(f.emp_face_id) AS face_count,
+           MAX(f.photo_html)    AS photo_html
     FROM hrms_ed_official_details o
     INNER JOIN hrms_ed_personal_details p ON o.eb_id = p.eb_id
     LEFT JOIN sub_dept_mst    s ON o.sub_dept_id    = s.sub_dept_id

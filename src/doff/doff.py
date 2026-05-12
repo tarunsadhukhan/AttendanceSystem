@@ -1979,3 +1979,259 @@ def get_spg1_quality_shift_report():
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Spg Running Hours — table: tbl_daily_vvfd_transaction
+#   machines: machine_mst where machine_type_id = 36 and branch_id matches
+# ─────────────────────────────────────────────────────────────────────────────
+
+@doff_bp.route('/doff/spg-running-machines', methods=['GET'])
+def get_spg_running_machines():
+    """
+    Machines for Spg Running Hours screen.
+    Source: machine_mst, filtered by branch_id and machine_type_id = 36.
+    Query params: ?branch_id=<id> (required)
+    Returns: { status, machines: [ { mc_id, mc_name, mc_code } ] }
+    """
+    try:
+        branch_id = request.args.get('branch_id', type=int)
+        if not branch_id:
+            return jsonify({'status': 'error', 'message': 'branch_id is required'}), 400
+
+        db = get_db()
+        cur = db.cursor(dictionary=True)
+        sql="""
+            SELECT machine_id    AS mc_id,
+                   machine_name  AS mc_name,
+                   mech_code     AS mc_code
+            FROM machine_mst
+            WHERE branch_id       = %s
+              AND machine_type_id = 36
+              AND (active IS NULL OR active = 1)
+            ORDER BY machine_name
+        """
+        cur.execute(sql, (branch_id,))
+        rows = cur.fetchall()
+        cur.close(); db.close()
+        return jsonify({'status': 'success', 'machines': rows, 'total': len(rows)})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+@doff_bp.route('/doff/spg-running-hours', methods=['POST'])
+def save_spg_running_hours():
+    """
+    Save a Spg Running Hours row into tbl_daily_vvfd_transaction.
+    Body JSON: { date, spell_id, branch_id, mc_id, mc_runs_time,
+                 kw_consumption (optional), user_id }
+    """
+    try:
+        data = request.get_json(silent=True) or request.form.to_dict() or {}
+        tran_date      = data.get('date')
+        spell_id       = data.get('spell_id')
+        branch_id      = data.get('branch_id')
+        mc_id          = data.get('mc_id')
+        mc_runs_time   = data.get('mc_runs_time')
+        kw_consumption = data.get('kw_consumption')
+        user_id        = data.get('user_id')
+
+        missing = [k for k, v in {
+            'date': tran_date, 'spell_id': spell_id, 'branch_id': branch_id,
+            'mc_id': mc_id, 'mc_runs_time': mc_runs_time,
+        }.items() if v in (None, '', 0, '0')]
+        if missing:
+            return jsonify({'status': 'error',
+                            'message': f'missing/empty: {", ".join(missing)}',
+                            'received': data}), 400
+        try:
+            mc_runs_time = float(mc_runs_time)
+        except Exception:
+            return jsonify({'status': 'error', 'message': 'mc_runs_time must be numeric'}), 400
+        try:
+            kw_consumption = float(kw_consumption) if kw_consumption not in (None, '') else None
+        except Exception:
+            return jsonify({'status': 'error', 'message': 'kw_consumption must be numeric'}), 400
+
+        db = get_db()
+        chk = db.cursor()
+        chk.execute("""
+            SELECT tbl_daily_vvfd_id
+            FROM tbl_daily_vvfd_transaction
+            WHERE tran_date = %s
+              AND spell_id  = %s
+              AND branch_id = %s
+              AND mc_id     = %s
+            LIMIT 1
+        """, (tran_date, spell_id, branch_id, mc_id))
+        dup = chk.fetchone()
+        chk.close()
+        if dup:
+            db.close()
+            return jsonify({'status': 'error', 'message': 'Already Entered'})
+
+        cursor = db.cursor()
+        cursor.execute("""
+            INSERT INTO tbl_daily_vvfd_transaction
+                (tran_date, spell_id, branch_id, mc_id,
+                 mc_runs_time, kw_consumption, updated_by)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+        """, (tran_date, spell_id, branch_id, mc_id,
+              mc_runs_time, kw_consumption, user_id))
+        db.commit()
+        new_id = cursor.lastrowid
+        cursor.close(); db.close()
+        return jsonify({'status': 'success', 'message': 'Saved', 'id': new_id})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+@doff_bp.route('/doff/spg-running-hours', methods=['GET'])
+def list_spg_running_hours():
+    """
+    List Spg Running Hours entries for date + spell (+ optional branch filter).
+    Query params: ?date=YYYY-MM-DD&spell_id=<id>&branch_id=<id>
+                  (date and spell_id required; branch_id optional)
+    """
+    try:
+        date_str  = request.args.get('date')
+        spell_id  = request.args.get('spell_id', type=int)
+        branch_id = request.args.get('branch_id', type=int)
+        if not all([date_str, spell_id]):
+            return jsonify({'status': 'error',
+                            'message': 'date, spell_id are required'}), 400
+
+        sql = """
+            SELECT v.tbl_daily_vvfd_id  AS id,
+                   v.tran_date,
+                   v.spell_id,
+                   v.branch_id,
+                   v.mc_id,
+                   COALESCE(mm.machine_name, mm.mech_code, CONCAT('MC', v.mc_id)) AS mc_name,
+                   v.mc_runs_time,
+                   v.kw_consumption,
+                   v.updated_by,
+                   v.updated_date_time
+            FROM tbl_daily_vvfd_transaction v
+            LEFT JOIN machine_mst mm ON v.mc_id = mm.machine_id
+            WHERE v.tran_date = %s
+              AND v.spell_id  = %s
+        """
+        params = [date_str, spell_id]
+        if branch_id:
+            sql += " AND v.branch_id = %s"
+            params.append(branch_id)
+        sql += " ORDER BY v.tbl_daily_vvfd_id DESC"
+
+        db = get_db()
+        cursor = db.cursor(dictionary=True)
+        cursor.execute(sql, tuple(params))
+        rows = cursor.fetchall()
+        cursor.close(); db.close()
+        for r in rows:
+            for k in ('mc_runs_time', 'kw_consumption'):
+                if r.get(k) is not None:
+                    try: r[k] = float(r[k])
+                    except Exception: pass
+        return jsonify({'status': 'success', 'entries': rows, 'total': len(rows)})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+@doff_bp.route('/doff/spg-running-hours/<int:entry_id>', methods=['PUT'])
+def update_spg_running_hours(entry_id):
+    """
+    Update an existing Spg Running Hours row.
+    Body JSON: { mc_id, branch_id, mc_runs_time, kw_consumption, user_id }
+    (any subset).
+    """
+    try:
+        data = request.get_json(silent=True) or {}
+        mc_id          = data.get('mc_id')
+        branch_id      = data.get('branch_id')
+        mc_runs_time   = data.get('mc_runs_time')
+        kw_consumption = data.get('kw_consumption')
+        user_id        = data.get('user_id')
+
+        try:
+            mc_runs_time = float(mc_runs_time) if mc_runs_time is not None else None
+        except Exception:
+            return jsonify({'status': 'error', 'message': 'mc_runs_time must be numeric'}), 400
+        try:
+            kw_consumption = float(kw_consumption) if kw_consumption not in (None, '') else None
+        except Exception:
+            return jsonify({'status': 'error', 'message': 'kw_consumption must be numeric'}), 400
+
+        sets = []
+        params = []
+        if mc_id        is not None: sets.append("mc_id = %s");          params.append(mc_id)
+        if branch_id    is not None: sets.append("branch_id = %s");      params.append(branch_id)
+        if mc_runs_time is not None: sets.append("mc_runs_time = %s");   params.append(mc_runs_time)
+        if 'kw_consumption' in data: sets.append("kw_consumption = %s"); params.append(kw_consumption)
+        if user_id      is not None: sets.append("updated_by = %s");     params.append(user_id)
+        if not sets:
+            return jsonify({'status': 'error', 'message': 'no fields to update'}), 400
+        sets.append("updated_date_time = CURRENT_TIMESTAMP")
+
+        db = get_db()
+        # If the update changes the natural key (mc_id / branch_id), guard duplicates.
+        if mc_id is not None or branch_id is not None:
+            chk = db.cursor(dictionary=True)
+            chk.execute("""
+                SELECT tran_date, spell_id, branch_id, mc_id
+                FROM tbl_daily_vvfd_transaction
+                WHERE tbl_daily_vvfd_id = %s
+            """, (entry_id,))
+            cur_row = chk.fetchone()
+            chk.close()
+            if cur_row:
+                new_mc_id     = mc_id     if mc_id     is not None else cur_row['mc_id']
+                new_branch_id = branch_id if branch_id is not None else cur_row['branch_id']
+                chk2 = db.cursor()
+                chk2.execute("""
+                    SELECT tbl_daily_vvfd_id
+                    FROM tbl_daily_vvfd_transaction
+                    WHERE tran_date         = %s
+                      AND spell_id          = %s
+                      AND branch_id         = %s
+                      AND mc_id             = %s
+                      AND tbl_daily_vvfd_id <> %s
+                    LIMIT 1
+                """, (cur_row['tran_date'], cur_row['spell_id'],
+                      new_branch_id, new_mc_id, entry_id))
+                dup = chk2.fetchone()
+                chk2.close()
+                if dup:
+                    db.close()
+                    return jsonify({'status': 'error', 'message': 'Already Entered'})
+
+        params.append(entry_id)
+        cursor = db.cursor()
+        cursor.execute(
+            f"UPDATE tbl_daily_vvfd_transaction SET {', '.join(sets)} WHERE tbl_daily_vvfd_id = %s",
+            tuple(params)
+        )
+        db.commit()
+        rows = cursor.rowcount
+        cursor.close(); db.close()
+        if rows == 0:
+            return jsonify({'status': 'error', 'message': 'entry not found'}), 404
+        return jsonify({'status': 'success', 'message': 'Updated', 'id': entry_id})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+@doff_bp.route('/doff/spg-running-hours/<int:entry_id>', methods=['DELETE'])
+def delete_spg_running_hours(entry_id):
+    try:
+        db = get_db()
+        cursor = db.cursor()
+        cursor.execute(
+            "DELETE FROM tbl_daily_vvfd_transaction WHERE tbl_daily_vvfd_id = %s",
+            (entry_id,)
+        )
+        db.commit()
+        cursor.close(); db.close()
+        return jsonify({'status': 'success', 'message': 'Deleted'})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+

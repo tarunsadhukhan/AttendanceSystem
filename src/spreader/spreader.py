@@ -428,16 +428,17 @@ def get_spreader_quality_stock():
         db = get_db()
         cursor = db.cursor(dictionary=True)
         cursor.execute("""
-        SELECT tds.sprd_quality_id quality_id,
+       SELECT sjqm.sprd_jute_qlty_id  quality_id,
                    sjqm.shr_name,
                    COALESCE(SUM(tds.production - tds.issue), 0) AS stock
             FROM tbl_daily_sperder tds
 			left join sprd_jute_quality_mst sjqm on sjqm.sprd_jute_qlty_id =tds.sprd_quality_id 
             LEFT JOIN jute_quality_mst jqm ON jqm.jute_qlty_id = tds.quality_id
-            WHERE tds.sprd_quality_id= %s
-            GROUP BY tds.quality_id, jqm.shr_name
-        """, (quality_id,))
+            WHERE tds.sprd_quality_id=%s
+            GROUP BY sjqm.sprd_jute_qlty_id , sjqm.shr_name
+             """, (quality_id,))
         row = cursor.fetchone()
+        print(f"Quality stock for quality_id={quality_id}: {row}")
         cursor.close()
         db.close()
         if row is None:
@@ -449,6 +450,48 @@ def get_spreader_quality_stock():
                         'quality_id': row['quality_id'],
                         'shr_name': row['shr_name'],
                         'stock': float(row['stock'] or 0)})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+@spreader_bp.route('/quality-stock-list', methods=['GET'])
+def get_spreader_quality_stock_list():
+    """
+    Stock-on-hand (No. of Rolls) for every sprd_quality in a branch.
+    stock = sum(production - issue) grouped by sprd_quality_id for the branch.
+    Query params: ?branch_id=<id> (required)
+    Returns: { status, qualities: [ { quality_id, shr_name, stock } ], total }
+    """
+    try:
+        branch_id = request.args.get('branch_id', type=int)
+        if not branch_id:
+            return jsonify({'status': 'error', 'message': 'branch_id is required'}), 400
+
+        db = get_db()
+        cursor = db.cursor(dictionary=True)
+        cursor.execute("""
+            SELECT tds.sprd_quality_id                              AS quality_id,
+                   sjqm.shr_name                                    AS shr_name,
+                   COALESCE(SUM(tds.production - tds.issue), 0)     AS stock
+            FROM tbl_daily_sperder tds
+            LEFT JOIN sprd_jute_quality_mst sjqm
+                   ON sjqm.sprd_jute_qlty_id = tds.sprd_quality_id
+            WHERE tds.branch_id = %s
+              AND tds.sprd_quality_id IS NOT NULL
+            GROUP BY tds.sprd_quality_id, sjqm.shr_name
+            ORDER BY sjqm.shr_name
+        """, (branch_id,))
+        rows = cursor.fetchall()
+        cursor.close()
+        db.close()
+        print(f"Quality stock list for branch_id={branch_id}: {(rows)} rows")
+        qualities = [{
+            'quality_id': r['quality_id'],
+            'shr_name':   r['shr_name'],
+            'stock':      float(r['stock'] or 0),
+        } for r in rows]
+
+        return jsonify({'status': 'success', 'qualities': qualities, 'total': len(qualities)})
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
