@@ -1,0 +1,45 @@
+[Unit]
+Description=Attendance System Backend (juteatt)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Adjust User/Group to match the account that owns the binary on the server.
+User=ubuntu
+Group=ubuntu
+
+# Path to the onefile binary and its working directory.
+# WorkingDirectory should contain any runtime folders the app reads/writes
+# (e.g. employee_photos/, img/). Create them on the server if missing.
+WorkingDirectory=/home/ubuntu/attendance
+ExecStart=/home/ubuntu/attendance/juteatt
+
+# Runtime config (override Flask defaults).
+Environment=FLASK_PORT=5051
+Environment=FLASK_DEBUG=False
+
+# Nuitka --onefile extracts to a temp dir on each start. Give it room and
+# point it at a stable location so /tmp cleanup doesn't surprise us.
+Environment=TMPDIR=/var/tmp
+
+# Restart policy: keep the server up.
+Restart=on-failure
+RestartSec=5s
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+# Logging: journalctl -u juteatt -f
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=juteatt
+
+# Light hardening. Comment any line out if it blocks something the app needs.
+NoNewPrivileges=true
+PrivateTmp=false
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/home/ubuntu/attendance /var/tmp
+
+[Install]
+WantedBy=multi-user.target

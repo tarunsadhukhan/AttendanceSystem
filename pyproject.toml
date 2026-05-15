@@ -13,3 +13,6 @@ dependencies = [
     "setuptools<75",
     "bcrypt>=5.0.0",
 ]
+
+[project.optional-dependencies]
+build = ["nuitka[onefile]"]

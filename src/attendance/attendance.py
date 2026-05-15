@@ -12,6 +12,7 @@ from db import get_db
 from src.utils import decode_image
 from src.employees.query import GET_ALL_EMPLOYEES_WITH_FACE, GET_EMPLOYEE_WITH_DETAILS
 from src.attendance import query as Q
+from src.attendance import face_cache
 from src.schemas.attendance import (MarkAttendanceSchema, ManualAttendanceSchema,
                                     CheckFaceSchema, AttendanceReportSchema)
 
@@ -51,21 +52,16 @@ def mark_attendance():
                             "message": "No face detected!"}), 400
 
         live_enc = live_encodings[0]
-        db       = get_db()
-        cursor   = db.cursor(dictionary=True)
-        cursor.execute(GET_ALL_EMPLOYEES_WITH_FACE)
-        employees = cursor.fetchall()
 
-        if not employees:
+        stored_encs, employees = face_cache.get()
+        if stored_encs.shape[0] == 0:
             return jsonify({"status": "error",
                             "message": "No employees registered!"}), 404
 
-        stored_encs = [np.array(json.loads(e['face_embedding'])) for e in employees]
-        matches     = face_recognition.compare_faces(stored_encs, live_enc, tolerance=0.5)
-        distances   = face_recognition.face_distance(stored_encs, live_enc)
-        best_idx    = int(np.argmin(distances))
-
-        if not matches[best_idx]:
+        distances = face_recognition.face_distance(stored_encs, live_enc)
+        best_idx  = int(np.argmin(distances))
+        best_dist = float(distances[best_idx])
+        if best_dist > 0.5:
             return jsonify({"status": "not_recognized",
                             "message": "Face not recognized!"}), 401
 
@@ -75,8 +71,11 @@ def mark_attendance():
         name           = emp['name'].strip()
         dept           = emp['department_name']
         desig          = emp['designation_name']
-        photo_html_val = emp['photo_html']
+        photo_html_val = face_cache.get_photo_html(eb_id)
         branch_id      = emp.get('branch_id')
+
+        db     = get_db()
+        cursor = db.cursor(dictionary=True)
 
         att_date       = data.get('attendance_date') or str(date.today())
         shift_id       = data.get('shift_id')
@@ -254,21 +253,15 @@ def check_face():
                             "message": "No face detected in image!"}), 400
 
         live_enc = live_encodings[0]
-        db       = get_db()
-        cursor   = db.cursor(dictionary=True)
-        cursor.execute(GET_ALL_EMPLOYEES_WITH_FACE)
-        employees = cursor.fetchall()
-        cursor.close()
-        db.close()
 
-        if not employees:
+        stored_encs, employees = face_cache.get()
+        if stored_encs.shape[0] == 0:
             return jsonify({"status": "error",
                             "message": "No employees with face registered!"}), 404
 
-        stored_encs = [np.array(json.loads(e['face_embedding'])) for e in employees]
-        distances   = face_recognition.face_distance(stored_encs, live_enc)
-        best_idx    = int(np.argmin(distances))
-        best_dist   = float(distances[best_idx])
+        distances = face_recognition.face_distance(stored_encs, live_enc)
+        best_idx  = int(np.argmin(distances))
+        best_dist = float(distances[best_idx])
 
         if best_dist > 0.5:
             return jsonify({"status": "not_recognized",
@@ -276,7 +269,7 @@ def check_face():
 
         emp            = employees[best_idx]
         name           = emp['name'].strip()
-        photo_html_val = emp['photo_html']
+        photo_html_val = face_cache.get_photo_html(emp['eb_id'])
         print(f"✅ Face matched: {name} ({emp['emp_code']}) distance={best_dist:.3f}")
 
         return jsonify({

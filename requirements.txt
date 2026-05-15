@@ -6,3 +6,6 @@ numpy
 opencv-python-headless
 setuptools<75
 gunicorn
+
+# Build-time only (compiling app.py to onefile .exe with Nuitka)
+nuitka[onefile]

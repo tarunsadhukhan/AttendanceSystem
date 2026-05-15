@@ -1,10 +1,9 @@
 from flask import Blueprint, request, jsonify
 import mysql.connector
-from db import get_db
+from db import get_dbpython 
 from src.masters import query as Q
 
 departments_bp = Blueprint('departments', __name__)
-
 
 @departments_bp.route('/departments', methods=['GET'])
 def get_departments():

@@ -4,3 +4,42 @@ __pycache__/
 *.pyc
 *.pyo
 .env
+
+# Build artifacts (Nuitka onefile / standalone, PyInstaller)
+build/
+dist/
+*.exe
+*.spec
+
+# Archives (build.rar etc. — too large for GitHub's 100MB file limit)
+*.rar
+*.zip
+*.7z
+*.tar
+*.tar.gz
+*.tgz
+
+# Logs and scratch output
+*.log
+server_out.txt
+server_err.txt
+srv_out.txt
+srv_err.txt
+out.txt
+err.txt
+check_out.txt
+result.txt
+cols.txt
+
+# Editor / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Backups
+*.backup_*
+*_backup_*.py
+*_old_*.py
+*.bak

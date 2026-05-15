@@ -117,7 +117,7 @@ def dashboard_stats():
                 "SELECT round(sum(working_hours/8),0) AS cnt FROM daily_attendance WHERE attendance_date = %s",
                 (stat_date,),
             )
-        total_present = cursor.fetchone()["cnt"]
+        total_present = int(cursor.fetchone()["cnt"] or 0)
 
         if branch_id:
             cursor.execute(
@@ -151,7 +151,7 @@ def dashboard_stats():
                 """,
                 (stat_date,),
             )
-        present_face = cursor.fetchone()["cnt"]
+        present_face = int(cursor.fetchone()["cnt"] or 0)
 
         if branch_id:
             cursor.execute(
@@ -185,7 +185,7 @@ def dashboard_stats():
                 """,
                 (stat_date,),
             )
-        present_manual = cursor.fetchone()["cnt"]
+        present_manual = int(cursor.fetchone()["cnt"] or 0)
 
         # Query departments that have attendance for the selected date+branch.
         # Driven by daily_attendance so every department with present>0 is included

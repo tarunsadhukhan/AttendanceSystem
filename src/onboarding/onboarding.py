@@ -265,6 +265,14 @@ def register_face():
         cursor.close()
         db.close()
 
+        # New embedding is now in the DB -- drop the in-memory match cache
+        # so the next /check-face / /attendance reload sees it.
+        try:
+            from src.attendance import face_cache
+            face_cache.invalidate()
+        except Exception as cache_err:
+            print(f"[onboarding] face_cache invalidate skipped: {cache_err}")
+
         return jsonify({
             'status': 'success',
             'message': f'Face registered successfully for {employee["name"].strip()} ({emp_code}) - {new_face_count}/3',
