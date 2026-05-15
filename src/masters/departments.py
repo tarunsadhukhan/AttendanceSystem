@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify
 import mysql.connector
-from db import get_dbpython 
+from db import get_db
 from src.masters import query as Q
 
 departments_bp = Blueprint('departments', __name__)
