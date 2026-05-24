@@ -1804,16 +1804,19 @@ def list_winding_entry2():
 # -- POST /doff/winding-entry-2 -----------------------------------------------
 @doff_bp.route('/doff/winding-entry-2', methods=['POST'])
 def save_winding_entry2():
-    """Save a Winding Entry (2) row.
-    Body: {date, spell_id, branch_id, eb_id, sc_type, trolly_id?,
+    """Save Winding Entry (2) row(s).
+    Body: {date, spell_id, branch_id, eb_id|eb_ids, sc_type, trolly_id?,
            gross_weight, tare_weight, net_weight, user_id}
+    When multiple eb_ids are supplied, the gross/tare/net weights of the
+    single weighed doff are split equally among them (one row per employee).
+    The rounding remainder is added to the last employee's row so the stored
+    totals match the entered doff exactly.
     """
     _ensure_we2_schema()
     data       = request.get_json(silent=True) or {}
     d          = data.get('date')
     spell_id   = data.get('spell_id')
     branch_id  = data.get('branch_id')
-    eb_id      = data.get('eb_id')
     sc_type    = (data.get('sc_type') or '').upper()
     trolly_id  = data.get('trolly_id')
     gross_wt   = float(data.get('gross_weight') or 0)
@@ -1824,32 +1827,63 @@ def save_winding_entry2():
     net_wt     = float(net_wt)
     user_id    = data.get('user_id') or 0
 
-    if not (d and spell_id and branch_id and eb_id):
+    # Accept either a single eb_id or a list of eb_ids; dedupe, preserve order
+    eb_ids = data.get('eb_ids')
+    if not eb_ids:
+        single = data.get('eb_id')
+        eb_ids = [single] if single else []
+    seen = set()
+    eb_ids = [e for e in eb_ids if e and not (e in seen or seen.add(e))]
+
+    if not (d and spell_id and branch_id and eb_ids):
         return jsonify({'status': 'error',
-                        'message': 'date, spell_id, branch_id and eb_id required'}), 400
+                        'message': 'date, spell_id, branch_id and eb_id(s) required'}), 400
     if sc_type not in ('S', 'C'):
         return jsonify({'status': 'error', 'message': 'sc_type must be S or C'}), 400
     if sc_type == 'S' and not trolly_id:
         return jsonify({'status': 'error', 'message': 'trolly_id required when sc_type=S'}), 400
     if net_wt <= 0:
         return jsonify({'status': 'error', 'message': 'Net weight must be positive'}), 400
+
+    n = len(eb_ids)
+
+    def split_equally(total):
+        """Split total into n parts (3 dp); last part absorbs the remainder."""
+        total = round(float(total or 0), 3)
+        if n <= 1:
+            return [total]
+        share = round(total / n, 3)
+        parts = [share] * (n - 1)
+        parts.append(round(total - share * (n - 1), 3))
+        return parts
+
+    gross_parts = split_equally(gross_wt)
+    tare_parts  = split_equally(tare_wt)
+    net_parts   = split_equally(net_wt)
+
     try:
         db  = get_db()
         cur = db.cursor()
-        cur.execute("""
-            INSERT INTO daily_doff_frames_winding
-                (tran_date, spell, spell_id, mc_eb_id, eb_id, sc_type,
-                 trolly_id, gross_weight, tare_weight, net_weight,
-                 spg_wdg, branch_id, active, user_id, created_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                    'W', %s, 1, %s, NOW())
-        """, (d, spell_id, spell_id, eb_id, eb_id, sc_type,
-              trolly_id, gross_wt, tare_wt, net_wt,
-              branch_id, user_id))
+        new_ids = []
+        for i, eb in enumerate(eb_ids):
+            cur.execute("""
+                INSERT INTO daily_doff_frames_winding
+                    (tran_date, spell, spell_id, mc_eb_id, eb_id, sc_type,
+                     trolly_id, gross_weight, tare_weight, net_weight,
+                     spg_wdg, branch_id, active, user_id, created_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        'W', %s, 1, %s, NOW())
+            """, (d, spell_id, spell_id, eb, eb, sc_type,
+                  trolly_id, gross_parts[i], tare_parts[i], net_parts[i],
+                  branch_id, user_id))
+            new_ids.append(cur.lastrowid)
         db.commit()
-        new_id = cur.lastrowid
         cur.close(); db.close()
-        return jsonify({'status': 'success', 'message': 'Saved', 'id': new_id})
+        return jsonify({'status': 'success',
+                        'message': 'Saved' if n == 1 else f'Saved {n} entries',
+                        'id': new_ids[0],
+                        'ids': new_ids,
+                        'count': n})
     except Exception as e:
         traceback.print_exc()
         return jsonify({'status': 'error', 'message': str(e)}), 500
