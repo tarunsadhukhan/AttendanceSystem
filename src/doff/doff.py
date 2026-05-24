@@ -543,15 +543,22 @@ def get_frame_entries():
         db = get_db()
         cur = db.cursor(dictionary=True)
         sql = """
-            SELECT daily_doff_frm_wdg_id AS id,
-                   mc_eb_id              AS mc_id,
-                   quality_id            AS quality_id
-            FROM daily_doff_frames_winding
-            WHERE tran_date = %s
-              AND spell     = %s
-              AND branch_id = %s
-              AND (spg_wdg IS NULL OR spg_wdg = 'S')
-              AND (active IS NULL OR active = 1)
+            SELECT w.daily_doff_frm_wdg_id AS id,
+                   w.mc_eb_id              AS mc_id,
+                   w.quality_id            AS quality_id,
+                   w.eb_id                 AS eb_id,
+                   o.emp_code              AS emp_code,
+                   CONCAT(COALESCE(p.first_name,''), ' ',
+                          COALESCE(p.middle_name,''), ' ',
+                          COALESCE(p.last_name,''))  AS emp_name
+            FROM daily_doff_frames_winding w
+            LEFT JOIN hrms_ed_official_details o ON o.eb_id = w.eb_id
+            LEFT JOIN hrms_ed_personal_details p ON p.eb_id = w.eb_id
+            WHERE w.tran_date = %s
+              AND w.spell     = %s
+              AND w.branch_id = %s
+              AND (w.spg_wdg IS NULL OR w.spg_wdg = 'S')
+              AND (w.active IS NULL OR w.active = 1)
         """
         cur.execute(sql, (d, spell_id, branch_id))
         rows = cur.fetchall()
@@ -560,7 +567,13 @@ def get_frame_entries():
             'status': 'success',
             'mc_ids': [r['mc_id'] for r in rows],
             'entries': [
-                {'mc_id': r['mc_id'], 'quality_id': r.get('quality_id')}
+                {
+                    'mc_id':      r['mc_id'],
+                    'quality_id': r.get('quality_id'),
+                    'eb_id':      r.get('eb_id'),
+                    'emp_code':   r.get('emp_code'),
+                    'emp_name':   ((r.get('emp_name') or '').strip() or None),
+                }
                 for r in rows
             ],
         })
@@ -592,8 +605,15 @@ def save_frame_entries():
             return jsonify({'status': 'error',
                             'message': 'date, spell_id and branch_id are required'}), 400
 
-        # Normalise to a list of (mc_id, quality_id) tuples
-        pairs = []
+        def _eb(v):
+            try:
+                return int(v) if v else None
+            except (TypeError, ValueError):
+                return None
+
+        # Normalise to a list of (mc_id, quality_id, eb_id) tuples -- EB No is
+        # captured per frame row (each frame has its own operator).
+        rows_to_insert = []
         if isinstance(entries, list):
             for e in entries:
                 if not isinstance(e, dict):
@@ -602,14 +622,17 @@ def save_frame_entries():
                 if mc is None:
                     continue
                 try:
-                    pairs.append((int(mc), int(e['quality_id'])
-                                  if e.get('quality_id') is not None else None))
+                    rows_to_insert.append((
+                        int(mc),
+                        int(e['quality_id']) if e.get('quality_id') is not None else None,
+                        _eb(e.get('eb_id')),
+                    ))
                 except (TypeError, ValueError):
                     pass
         elif isinstance(mc_ids, list):
             for mc in mc_ids:
                 try:
-                    pairs.append((int(mc), None))
+                    rows_to_insert.append((int(mc), None, None))
                 except (TypeError, ValueError):
                     pass
         else:
@@ -629,15 +652,15 @@ def save_frame_entries():
         """, (d, spell_id, branch_id))
 
         inserted = 0
-        if pairs:
+        if rows_to_insert:
             ins = """
                 INSERT INTO daily_doff_frames_winding
-                    (tran_date, spell, mc_eb_id, quality_id, spg_wdg, branch_id, active)
-                VALUES (%s, %s, %s, %s, 'S', %s, 1)
+                    (tran_date, spell, mc_eb_id, quality_id, eb_id, spg_wdg, branch_id, active)
+                VALUES (%s, %s, %s, %s, %s, 'S', %s, 1)
             """
-            for mc, qid in pairs:
+            for mc, qid, eb in rows_to_insert:
                 try:
-                    cur.execute(ins, (d, spell_id, mc, qid, branch_id))
+                    cur.execute(ins, (d, spell_id, mc, qid, eb, branch_id))
                     inserted += 1
                 except Exception as ex:
                     print('frame insert err for mc', mc, ex)
@@ -1005,7 +1028,7 @@ def validate_doff_trolly():
                    trolly_weight,
                    busket_weight AS bucket_weight
             FROM trolly_mst
-            WHERE (trolly_posting_code = %s OR trolly_name = %s)
+            WHERE trolly_type='S' and (trolly_posting_code = %s OR trolly_name = %s)
         """
         # Coerce posting code: only pass int if input is digits, else -1 (no match)
         try:
@@ -1035,19 +1058,61 @@ def validate_doff_trolly():
         traceback.print_exc()
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
+# -- GET /doff/frame-spindle --------------------------------------------------
+@doff_bp.route('/doff/frame-spindle', methods=['GET'])
+def get_doff_frame_spindle():
+    """No-of-spindle + bobbin weight for a machine, from frame_details_mst.
+
+    spool_wt = no_of_spindle * bobbin_weight. The caller divides spool_wt by
+    1000 when adding it onto the trolly tare. Query: mc_id (required).
+    """
+    mc_id = request.args.get('mc_id', type=int)
+    if not mc_id:
+        return jsonify({'status': 'error', 'message': 'mc_id required'}), 400
+    try:
+        db  = get_db()
+        cur = db.cursor(dictionary=True)
+        cur.execute("""
+            SELECT no_of_spindle,
+                   bobbin_weight,
+                   (no_of_spindle * bobbin_weight) AS spool_wt
+            FROM frame_details_mst
+            WHERE mc_id = %s
+            ORDER BY frame_details_mst_id DESC
+            LIMIT 1
+        """, (mc_id,))
+        row = cur.fetchone()
+        cur.close(); db.close()
+        if not row:
+            return jsonify({'status': 'success', 'found': False,
+                            'no_of_spindle': None, 'bobbin_weight': None, 'spool_wt': None})
+        return jsonify({
+            'status':        'success',
+            'found':         True,
+            'no_of_spindle': row['no_of_spindle'],
+            'bobbin_weight': row['bobbin_weight'],
+            'spool_wt':      row['spool_wt'],
+        })
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
 # -- GET /doff/winding-eb-lookup ----------------------------------------------
 @doff_bp.route('/doff/winding-eb-lookup', methods=['GET'])
 def winding_eb_lookup():
     """Validate an EB number and return the employee's name.
     ?eb_no=<number>&branch_id=<id>
     """
-    eb_no     = request.args.get('eb_no', type=int)
+    eb_no     = (request.args.get('eb_no') or '').strip()
     branch_id = request.args.get('branch_id', type=int)
     if not eb_no:
         return jsonify({'status': 'error', 'message': 'eb_no required'}), 400
     try:
         db  = get_db()
         cur = db.cursor(dictionary=True)
+        # emp_code is varchar(20) and most codes contain letters (e.g. 'C2001'),
+        # so it must be matched as a string -- an int cast drops these rows.
         sql = """
             SELECT p.eb_id,
                    o.emp_code,
@@ -1056,7 +1121,7 @@ def winding_eb_lookup():
                           COALESCE(p.last_name,''))  AS emp_name
             FROM hrms_ed_personal_details  p
             JOIN hrms_ed_official_details  o ON o.eb_id = p.eb_id
-            WHERE o.emp_code = %s
+            WHERE TRIM(o.emp_code) = %s
               AND (o.active IS NULL OR o.active = 1)
         """
         print('winding_eb_lookup SQL:', sql, 'params:', eb_no, branch_id)

@@ -115,7 +115,7 @@ def get_assorting_machines():
                    dm.dept_desc      AS dept_name
             FROM machine_mst mm
             LEFT JOIN dept_mst dm ON mm.dept_id = dm.dept_id
-            WHERE mm.machine_type_id = 8
+            WHERE mm.machine_type_id in(8,50)
               AND dm.branch_id = %s
               AND (%s IS NULL OR mm.shed_type = %s)
               AND (mm.active IS NULL OR mm.active = 1)
@@ -347,6 +347,72 @@ def list_assorting_entries():
         cursor.close()
         db.close()
         return jsonify({'status': 'success', 'entries': rows, 'total': len(rows)})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+# ─── Assorting Report (production by selector / machine-type / quality) ────────
+@assorting_bp.route('/report', methods=['GET'])
+def assorting_report():
+    """Three production reports for a date+branch, each with a grand total:
+       1) by selector, 2) by machine type, 3) by jute quality.
+    """
+    try:
+        _ensure_assorting_table()
+        date_str  = request.args.get('date')
+        branch_id = request.args.get('branch_id', type=int)
+        if not all([date_str, branch_id]):
+            return jsonify({'status': 'error',
+                            'message': 'date and branch_id are required'}), 400
+
+        db = get_db()
+        cur = db.cursor(dictionary=True)
+
+        def rows(sql):
+            cur.execute(sql, (date_str, branch_id))
+            out = [{'name': (r['name'] or ''), 'production': float(r['production'] or 0)}
+                   for r in cur.fetchall()]
+            return {'rows': out, 'grand_total': round(sum(x['production'] for x in out), 3)}
+
+        # 1) Selector wise
+        by_selector = rows("""
+            SELECT COALESCE(tsm.selector_name, '') AS name, SUM(ae.net_wt) AS production
+            FROM assorting_entry ae
+            LEFT JOIN tbl_selector_mst tsm ON ae.selector_id = tsm.tbl_selector_mst_id
+            WHERE ae.entry_date = %s AND ae.branch_id = %s
+            GROUP BY tsm.selector_name
+            ORDER BY production DESC
+        """)
+        # 2) Machine type wise (machine_type_id 8 = Spreader, else Softner)
+        by_machine_type = rows("""
+            SELECT CASE WHEN g.machine_type_id = 8 THEN 'Spreader' ELSE 'Softner' END AS name,
+                   g.production
+            FROM (
+                SELECT mm.machine_type_id, SUM(ae.net_wt) AS production
+                FROM assorting_entry ae
+                LEFT JOIN machine_mst mm ON ae.mc_id = mm.machine_id
+                WHERE ae.entry_date = %s AND ae.branch_id = %s
+                GROUP BY mm.machine_type_id
+            ) g
+            ORDER BY g.production DESC
+        """)
+        # 3) Quality wise
+        by_quality = rows("""
+            SELECT COALESCE(jqm.shr_name, '') AS name, SUM(ae.net_wt) AS production
+            FROM assorting_entry ae
+            LEFT JOIN jute_quality_mst jqm ON ae.quality_id = jqm.jute_qlty_id
+            WHERE ae.entry_date = %s AND ae.branch_id = %s
+            GROUP BY jqm.shr_name
+            ORDER BY production DESC
+        """)
+
+        cur.close(); db.close()
+        return jsonify({
+            'status':          'success',
+            'by_selector':     by_selector,
+            'by_machine_type': by_machine_type,
+            'by_quality':      by_quality,
+        })
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
