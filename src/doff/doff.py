@@ -1683,6 +1683,7 @@ def _ensure_we2_schema():
         if 'net_weight'   not in existing: adds.append("ADD COLUMN net_weight DECIMAL(12,3) NULL")
         if 'user_id'      not in existing: adds.append("ADD COLUMN user_id INT NULL")
         if 'created_at'   not in existing: adds.append("ADD COLUMN created_at DATETIME NULL")
+        if 'no_of_spools' not in existing: adds.append("ADD COLUMN no_of_spools INT NULL")
         if adds:
             cur.execute("ALTER TABLE daily_doff_frames_winding " + ", ".join(adds))
             db.commit()
@@ -1735,6 +1736,53 @@ def winding_entry2_emp_lookup():
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 
+# -- GET /doff/winding-entry-2-spool-types ------------------------------------
+@doff_bp.route('/doff/winding-entry-2-spool-types', methods=['GET'])
+def get_winding_entry2_spool_types():
+    """Return spool types from trolly_mst where trolly_type='P'.
+    Optional ?branch_id= limits to the branch (NULL-branch rows always shown).
+    spool_weight is the per-spool tare weight (kg) used as:
+        tare = trolly_tare + no_of_spools * spool_weight
+    """
+    try:
+        branch_id = request.args.get('branch_id', type=int)
+        db  = get_db()
+        cur = db.cursor(dictionary=True)
+        sql = """
+            SELECT trolly_id,
+                   trolly_name,
+                   trolly_posting_code AS trolly_no,
+                   trolly_weight       AS spool_weight,
+                   busket_weight       AS bucket_weight
+            FROM trolly_mst
+            WHERE trolly_type = 'P'
+        """
+        params = []
+        if branch_id:
+            sql += " AND (branch_id IS NULL OR branch_id = %s)"
+            params.append(branch_id)
+        sql += " ORDER BY trolly_name"
+        cur.execute(sql, tuple(params))
+        rows = cur.fetchall()
+        cur.close(); db.close()
+        return jsonify({
+            'status': 'success',
+            'spool_types': [
+                {
+                    'trolly_id':     r['trolly_id'],
+                    'trolly_name':   r['trolly_name'],
+                    'trolly_no':     r['trolly_no'],
+                    'spool_weight':  float(r['spool_weight']  or 0),
+                    'bucket_weight': float(r['bucket_weight'] or 0),
+                }
+                for r in rows
+            ]
+        })
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
 # -- GET /doff/winding-entry-2 ------------------------------------------------
 @doff_bp.route('/doff/winding-entry-2', methods=['GET'])
 def list_winding_entry2():
@@ -1762,7 +1810,8 @@ def list_winding_entry2():
                     t.trolly_name,
                     w.gross_weight,
                     w.tare_weight,
-                    w.net_weight
+                    w.net_weight,
+                    w.no_of_spools
               FROM daily_doff_frames_winding w
               LEFT JOIN hrms_ed_official_details o ON o.eb_id = w.eb_id
               LEFT JOIN hrms_ed_personal_details p ON p.eb_id = w.eb_id
@@ -1794,6 +1843,7 @@ def list_winding_entry2():
                 'gross_weight': float(r['gross_weight']) if r['gross_weight'] is not None else None,
                 'tare_weight':  float(r['tare_weight'])  if r['tare_weight']  is not None else None,
                 'net_weight':   float(r['net_weight'])   if r['net_weight']   is not None else None,
+                'no_of_spools': r['no_of_spools'],
             })
         return jsonify({'status': 'success', 'summary': out})
     except Exception as e:
@@ -1826,6 +1876,12 @@ def save_winding_entry2():
         net_wt = gross_wt - tare_wt
     net_wt     = float(net_wt)
     user_id    = data.get('user_id') or 0
+    no_of_spools = data.get('no_of_spools')
+    if no_of_spools is not None:
+        try:
+            no_of_spools = int(no_of_spools)
+        except (TypeError, ValueError):
+            no_of_spools = None
 
     # Accept either a single eb_id or a list of eb_ids; dedupe, preserve order
     eb_ids = data.get('eb_ids')
@@ -1840,8 +1896,6 @@ def save_winding_entry2():
                         'message': 'date, spell_id, branch_id and eb_id(s) required'}), 400
     if sc_type not in ('S', 'C'):
         return jsonify({'status': 'error', 'message': 'sc_type must be S or C'}), 400
-    if sc_type == 'S' and not trolly_id:
-        return jsonify({'status': 'error', 'message': 'trolly_id required when sc_type=S'}), 400
     if net_wt <= 0:
         return jsonify({'status': 'error', 'message': 'Net weight must be positive'}), 400
 
@@ -1857,9 +1911,22 @@ def save_winding_entry2():
         parts.append(round(total - share * (n - 1), 3))
         return parts
 
+    def split_int(total):
+        """Split an integer count into n parts; last part absorbs the remainder."""
+        if total is None:
+            return [None] * n
+        total = int(total)
+        if n <= 1:
+            return [total]
+        share = total // n
+        parts = [share] * (n - 1)
+        parts.append(total - share * (n - 1))
+        return parts
+
     gross_parts = split_equally(gross_wt)
     tare_parts  = split_equally(tare_wt)
     net_parts   = split_equally(net_wt)
+    spool_parts = split_int(no_of_spools)
 
     try:
         db  = get_db()
@@ -1870,12 +1937,12 @@ def save_winding_entry2():
                 INSERT INTO daily_doff_frames_winding
                     (tran_date, spell, spell_id, mc_eb_id, eb_id, sc_type,
                      trolly_id, gross_weight, tare_weight, net_weight,
-                     spg_wdg, branch_id, active, user_id, created_at)
+                     no_of_spools, spg_wdg, branch_id, active, user_id, created_at)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                        'W', %s, 1, %s, NOW())
+                        %s, 'W', %s, 1, %s, NOW())
             """, (d, spell_id, spell_id, eb, eb, sc_type,
                   trolly_id, gross_parts[i], tare_parts[i], net_parts[i],
-                  branch_id, user_id))
+                  spool_parts[i], branch_id, user_id))
             new_ids.append(cur.lastrowid)
         db.commit()
         cur.close(); db.close()
@@ -1996,7 +2063,8 @@ def winding_entry2_detail():
                     t.trolly_name,
                     w.gross_weight,
                     w.tare_weight,
-                    w.net_weight
+                    w.net_weight,
+                    w.no_of_spools
               FROM daily_doff_frames_winding w
               LEFT JOIN hrms_ed_official_details o ON o.eb_id = w.eb_id
               LEFT JOIN hrms_ed_personal_details p ON p.eb_id = w.eb_id
@@ -2025,6 +2093,7 @@ def winding_entry2_detail():
                 'gross_weight': float(r['gross_weight']) if r['gross_weight'] is not None else None,
                 'tare_weight':  float(r['tare_weight'])  if r['tare_weight']  is not None else None,
                 'net_weight':   float(r['net_weight'])   if r['net_weight']   is not None else None,
+                'no_of_spools': r['no_of_spools'],
             })
         return jsonify({'status': 'success', 'summary': out})
     except Exception as e:
@@ -2132,6 +2201,10 @@ def save_spg_running_hours():
         mc_id          = data.get('mc_id')
         mc_runs_time   = data.get('mc_runs_time')
         kw_consumption = data.get('kw_consumption')
+        loss_min_doff  = data.get('loss_min_doff')
+        loss_min_mech  = data.get('loss_min_mech')
+        loss_min_elec  = data.get('loss_min_elec')
+        loss_min_oth   = data.get('loss_min_oth')
         user_id        = data.get('user_id')
 
         missing = [k for k, v in {
@@ -2150,6 +2223,21 @@ def save_spg_running_hours():
             kw_consumption = float(kw_consumption) if kw_consumption not in (None, '') else None
         except Exception:
             return jsonify({'status': 'error', 'message': 'kw_consumption must be numeric'}), 400
+
+        def _to_float_or_none(v, label):
+            if v in (None, ''):
+                return None
+            try:
+                return float(v)
+            except Exception:
+                raise ValueError(f'{label} must be numeric')
+        try:
+            loss_min_doff = _to_float_or_none(loss_min_doff, 'loss_min_doff')
+            loss_min_mech = _to_float_or_none(loss_min_mech, 'loss_min_mech')
+            loss_min_elec = _to_float_or_none(loss_min_elec, 'loss_min_elec')
+            loss_min_oth  = _to_float_or_none(loss_min_oth,  'loss_min_oth')
+        except ValueError as ve:
+            return jsonify({'status': 'error', 'message': str(ve)}), 400
 
         db = get_db()
         chk = db.cursor()
@@ -2172,10 +2260,14 @@ def save_spg_running_hours():
         cursor.execute("""
             INSERT INTO tbl_daily_vvfd_transaction
                 (tran_date, spell_id, branch_id, mc_id,
-                 mc_runs_time, kw_consumption, updated_by)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+                 mc_runs_time, kw_consumption,
+                 loss_min_doff, loss_min_mech, loss_min_elec, loss_min_oth,
+                 updated_by)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """, (tran_date, spell_id, branch_id, mc_id,
-              mc_runs_time, kw_consumption, user_id))
+              mc_runs_time, kw_consumption,
+              loss_min_doff, loss_min_mech, loss_min_elec, loss_min_oth,
+              user_id))
         db.commit()
         new_id = cursor.lastrowid
         cursor.close(); db.close()
@@ -2208,6 +2300,10 @@ def list_spg_running_hours():
                    COALESCE(mm.machine_name, mm.mech_code, CONCAT('MC', v.mc_id)) AS mc_name,
                    v.mc_runs_time,
                    v.kw_consumption,
+                   v.loss_min_doff,
+                   v.loss_min_mech,
+                   v.loss_min_elec,
+                   v.loss_min_oth,
                    v.updated_by,
                    v.updated_date_time
             FROM tbl_daily_vvfd_transaction v
@@ -2227,7 +2323,9 @@ def list_spg_running_hours():
         rows = cursor.fetchall()
         cursor.close(); db.close()
         for r in rows:
-            for k in ('mc_runs_time', 'kw_consumption'):
+            for k in ('mc_runs_time', 'kw_consumption',
+                      'loss_min_doff', 'loss_min_mech',
+                      'loss_min_elec', 'loss_min_oth'):
                 if r.get(k) is not None:
                     try: r[k] = float(r[k])
                     except Exception: pass
@@ -2260,12 +2358,35 @@ def update_spg_running_hours(entry_id):
         except Exception:
             return jsonify({'status': 'error', 'message': 'kw_consumption must be numeric'}), 400
 
+        def _to_float_or_none(v, label):
+            if v in (None, ''):
+                return None
+            try:
+                return float(v)
+            except Exception:
+                raise ValueError(f'{label} must be numeric')
+        try:
+            loss_min_doff = _to_float_or_none(data.get('loss_min_doff'), 'loss_min_doff') \
+                            if 'loss_min_doff' in data else None
+            loss_min_mech = _to_float_or_none(data.get('loss_min_mech'), 'loss_min_mech') \
+                            if 'loss_min_mech' in data else None
+            loss_min_elec = _to_float_or_none(data.get('loss_min_elec'), 'loss_min_elec') \
+                            if 'loss_min_elec' in data else None
+            loss_min_oth  = _to_float_or_none(data.get('loss_min_oth'),  'loss_min_oth')  \
+                            if 'loss_min_oth'  in data else None
+        except ValueError as ve:
+            return jsonify({'status': 'error', 'message': str(ve)}), 400
+
         sets = []
         params = []
         if mc_id        is not None: sets.append("mc_id = %s");          params.append(mc_id)
         if branch_id    is not None: sets.append("branch_id = %s");      params.append(branch_id)
         if mc_runs_time is not None: sets.append("mc_runs_time = %s");   params.append(mc_runs_time)
         if 'kw_consumption' in data: sets.append("kw_consumption = %s"); params.append(kw_consumption)
+        if 'loss_min_doff' in data:  sets.append("loss_min_doff = %s");  params.append(loss_min_doff)
+        if 'loss_min_mech' in data:  sets.append("loss_min_mech = %s");  params.append(loss_min_mech)
+        if 'loss_min_elec' in data:  sets.append("loss_min_elec = %s");  params.append(loss_min_elec)
+        if 'loss_min_oth'  in data:  sets.append("loss_min_oth = %s");   params.append(loss_min_oth)
         if user_id      is not None: sets.append("updated_by = %s");     params.append(user_id)
         if not sets:
             return jsonify({'status': 'error', 'message': 'no fields to update'}), 400

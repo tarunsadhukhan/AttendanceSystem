@@ -65,6 +65,7 @@ def save_roll_stock():
         mc_code_id      = data.get('mc_code_id')
         sprd_quality_id = data.get('sprd_quality_id')
         no_of_rolls     = data.get('no_of_rolls')
+        shed_type       = data.get('shed_type')
         user_id         = data.get('user_id')
 
         missing = [k for k, v in {
@@ -86,10 +87,10 @@ def save_roll_stock():
         cursor.execute("""
             INSERT INTO tbl_daily_roll_stock
                 (stock_date, spell_id, sprd_quality_id, no_of_rolls,
-                 mc_code_id, updated_by)
-            VALUES (%s, %s, %s, %s, %s, %s)
+                 mc_code_id, shed_type, updated_by)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
         """, (stock_date, spell_id, sprd_quality_id, no_of_rolls,
-              mc_code_id, user_id))
+              mc_code_id, shed_type, user_id))
         db.commit()
         new_id = cursor.lastrowid
         cursor.close()
@@ -124,6 +125,7 @@ def list_roll_stock():
                    r.sprd_quality_id,
                    COALESCE(sjq.shr_name, sjq.sprd_jute_quality, '') AS quality,
                    r.no_of_rolls,
+                   r.shed_type,
                    r.updated_by,
                    r.updated_date_time
             FROM tbl_daily_roll_stock r
@@ -160,6 +162,7 @@ def update_roll_stock(entry_id):
         mc_code_id      = data.get('mc_code_id')
         sprd_quality_id = data.get('sprd_quality_id')
         no_of_rolls     = data.get('no_of_rolls')
+        shed_type       = data.get('shed_type')
         user_id         = data.get('user_id')
         try:
             no_of_rolls = int(float(no_of_rolls)) if no_of_rolls is not None else None
@@ -171,6 +174,7 @@ def update_roll_stock(entry_id):
         if mc_code_id      is not None: sets.append("mc_code_id = %s");      params.append(mc_code_id)
         if sprd_quality_id is not None: sets.append("sprd_quality_id = %s"); params.append(sprd_quality_id)
         if no_of_rolls     is not None: sets.append("no_of_rolls = %s");     params.append(no_of_rolls)
+        if shed_type       is not None: sets.append("shed_type = %s");       params.append(shed_type)
         if user_id         is not None: sets.append("updated_by = %s");      params.append(user_id)
         if not sets:
             return jsonify({'status': 'error', 'message': 'no fields to update'}), 400

@@ -45,11 +45,38 @@ def menu_permissions():
         WHERE   m.is_active = 1
         ORDER BY (m.parent_id IS NULL) DESC, m.parent_id, m.menu_order
     """
+    sql1="""				select g.* from (    
+                SELECT  m.id            AS menu_id,
+                m.menu_key,
+                m.menu_name,
+                m.parent_id,
+                m.menu_order,
+                m.icon,
+                m.activity_class,
+                m.is_group,
+                COALESCE(p.can_view  , 0) AS can_view,
+                COALESCE(p.can_add   , 0) AS can_add,
+                COALESCE(p.can_modify, 0) AS can_modify,
+                COALESCE(p.can_delete, 0) AS can_delete,
+                COALESCE(p.can_print , 0) AS can_print,
+                COALESCE(p.can_all   , 0) AS can_all
+        FROM    menus m
+        LEFT JOIN v_user_effective_permissions p
+               ON p.menu_id = m.id AND p.user_id = %s
+        WHERE   m.is_active = 1
+        ) g
+    left join role_app_menu_map ramm on ramm.menu_id =g.menu_id 
+    left join user_role_map urm on ramm.role_id =urm.role_id 
+    where urm.user_id =%s
+        ORDER BY (parent_id IS NULL) DESC, parent_id, menu_order
+ """
     try:
         db = get_db()
         cursor = db.cursor(dictionary=True)
-        cursor.execute(sql, (user_id,))
+        cursor.execute(sql1, (user_id, user_id))
         rows = cursor.fetchall()
+        print('sql',sql)
+        print('rows',rows )
         cursor.close()
         db.close()
     except Exception as e:
