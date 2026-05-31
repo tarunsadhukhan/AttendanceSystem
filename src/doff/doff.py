@@ -1684,6 +1684,7 @@ def _ensure_we2_schema():
         if 'user_id'      not in existing: adds.append("ADD COLUMN user_id INT NULL")
         if 'created_at'   not in existing: adds.append("ADD COLUMN created_at DATETIME NULL")
         if 'no_of_spools' not in existing: adds.append("ADD COLUMN no_of_spools INT NULL")
+        if 'no_of_spindle' not in existing: adds.append("ADD COLUMN no_of_spindle INT NULL")
         if adds:
             cur.execute("ALTER TABLE daily_doff_frames_winding " + ", ".join(adds))
             db.commit()
@@ -1882,6 +1883,12 @@ def save_winding_entry2():
             no_of_spools = int(no_of_spools)
         except (TypeError, ValueError):
             no_of_spools = None
+    no_of_spindle = data.get('no_of_spindle')
+    if no_of_spindle is not None:
+        try:
+            no_of_spindle = int(no_of_spindle)
+        except (TypeError, ValueError):
+            no_of_spindle = None
 
     # Accept either a single eb_id or a list of eb_ids; dedupe, preserve order
     eb_ids = data.get('eb_ids')
@@ -1927,6 +1934,7 @@ def save_winding_entry2():
     tare_parts  = split_equally(tare_wt)
     net_parts   = split_equally(net_wt)
     spool_parts = split_int(no_of_spools)
+    spindle_parts = split_int(no_of_spindle)
 
     try:
         db  = get_db()
@@ -1937,12 +1945,12 @@ def save_winding_entry2():
                 INSERT INTO daily_doff_frames_winding
                     (tran_date, spell, spell_id, mc_eb_id, eb_id, sc_type,
                      trolly_id, gross_weight, tare_weight, net_weight,
-                     no_of_spools, spg_wdg, branch_id, active, user_id, created_at)
+                     no_of_spools, no_of_spindle, spg_wdg, branch_id, active, user_id, created_at)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                        %s, 'W', %s, 1, %s, NOW())
+                        %s, %s, 'W', %s, 1, %s, NOW())
             """, (d, spell_id, spell_id, eb, eb, sc_type,
                   trolly_id, gross_parts[i], tare_parts[i], net_parts[i],
-                  spool_parts[i], branch_id, user_id))
+                  spool_parts[i], spindle_parts[i], branch_id, user_id))
             new_ids.append(cur.lastrowid)
         db.commit()
         cur.close(); db.close()
