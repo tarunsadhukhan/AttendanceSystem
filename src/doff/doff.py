@@ -749,9 +749,30 @@ def get_spg1_summary():
                     m.machine_name      AS mc_name,
                     m.mech_posting_code AS mech_posting_code,
                     dt.net_weight,
-                    dt.daily_doff_tbl_id
+                    dt.daily_doff_tbl_id,
+                    o.emp_code          AS emp_code,
+                    CONCAT(COALESCE(p.first_name,''), ' ',
+                           COALESCE(p.middle_name,''), ' ',
+                           COALESCE(p.last_name,''))  AS emp_name
             FROM daily_doff_tbl dt
             INNER JOIN machine_mst m ON m.machine_id = dt.mc_id
+            LEFT JOIN (
+                SELECT f.mc_eb_id, f.eb_id
+                FROM daily_doff_frames_winding f
+                INNER JOIN (
+                    SELECT mc_eb_id, MAX(daily_doff_frm_wdg_id) AS max_id
+                    FROM daily_doff_frames_winding
+                    WHERE tran_date = %s
+                      AND spell     = %s
+                      AND branch_id = %s
+                      AND (spg_wdg IS NULL OR spg_wdg = 'S')
+                      AND (active IS NULL OR active = 1)
+                    GROUP BY mc_eb_id
+                ) lf ON lf.mc_eb_id = f.mc_eb_id
+                    AND lf.max_id   = f.daily_doff_frm_wdg_id
+            ) fe ON fe.mc_eb_id = dt.mc_id
+            LEFT JOIN hrms_ed_official_details o ON o.eb_id = fe.eb_id
+            LEFT JOIN hrms_ed_personal_details p ON p.eb_id = fe.eb_id
             WHERE dt.doff_date  = %s
               AND dt.spell      = %s
               AND dt.branch_id  = %s
@@ -759,7 +780,7 @@ def get_spg1_summary():
               AND (dt.active IS NULL OR dt.active = 1)
             ORDER BY m.mech_posting_code, dt.daily_doff_tbl_id
         """
-        params = (d, spell_id, branch_id)
+        params = (d, spell_id, branch_id, d, spell_id, branch_id)
         print('GET /doff/spg1-summary SQL:', sql)
         print('GET /doff/spg1-summary params:', params)
         cur.execute(sql, params)
@@ -776,6 +797,8 @@ def get_spg1_summary():
                     'mc_code':           r.get('mc_code') or '',
                     'mc_name':           r.get('mc_name') or '',
                     'mech_posting_code': int(r['mech_posting_code']) if r.get('mech_posting_code') is not None else None,
+                    'emp_code':          r.get('emp_code') or '',
+                    'emp_name':          (r.get('emp_name') or '').strip(),
                     'weights':           [],
                     'no_of_doff':        0,
                     'total_wt':          0.0,
