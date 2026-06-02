@@ -1081,6 +1081,61 @@ def validate_doff_trolly():
         traceback.print_exc()
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
+# -- GET /doff/validate-trolly_winding ----------------------------------------
+@doff_bp.route('/doff/validate-trolly_winding', methods=['GET'])
+def validate_doff_trolly_winding():
+    """Validate a typed trolly number against trolly_mst for winding.
+
+    Same as /doff/validate-trolly but matches trolly_type='W'.
+    Accepts ?trolly_no=<value>&branch_id=<id>. Matches against
+    trolly_posting_code (numeric) OR trolly_name. Returns trolly_id plus
+    trolly + bucket weights for auto-tare.
+    """
+    try:
+        trolly_no = (request.args.get('trolly_no') or '').strip()
+        branch_id = request.args.get('branch_id', type=int)
+        if not trolly_no:
+            return jsonify({'status': 'error', 'message': 'trolly_no required'}), 400
+
+        db = get_db()
+        cur = db.cursor(dictionary=True)
+        sql = """
+            SELECT trolly_id,
+                   trolly_name,
+                   trolly_posting_code AS trolly_no,
+                   trolly_weight,
+                   busket_weight AS bucket_weight
+            FROM trolly_mst
+            WHERE trolly_type='W' and (trolly_posting_code = %s OR trolly_name = %s)
+        """
+        # Coerce posting code: only pass int if input is digits, else -1 (no match)
+        try:
+            posting_code_val = int(trolly_no)
+        except ValueError:
+            posting_code_val = -1
+        params = [posting_code_val, trolly_no]
+        if branch_id:
+            sql += ' AND (branch_id IS NULL OR branch_id = %s)'
+            params.append(branch_id)
+        sql += ' LIMIT 1'
+        cur.execute(sql, tuple(params))
+        row = cur.fetchone()
+        cur.close(); db.close()
+
+        if not row:
+            return jsonify({'status': 'error', 'message': 'Trolly not found'}), 404
+        return jsonify({
+            'status':        'success',
+            'trolly_id':     row['trolly_id'],
+            'trolly_no':     row['trolly_no'],
+            'trolly_name':   row['trolly_name'],
+            'trolly_weight': float(row['trolly_weight'] or 0),
+            'bucket_weight': float(row['bucket_weight'] or 0),
+        })
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
 # -- GET /doff/frame-spindle --------------------------------------------------
 @doff_bp.route('/doff/frame-spindle', methods=['GET'])
 def get_doff_frame_spindle():
