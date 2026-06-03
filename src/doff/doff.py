@@ -1695,11 +1695,14 @@ def get_winding_entry2_employees():
                             'message': 'date, spell_id and branch_id are required'}), 400
         db  = get_db()
         cur = db.cursor(dictionary=True)
+        # quality_ids = the distinct winding qualities each employee is mapped to
+        # (from their frame-entry rows). Used by the entry screen to filter the
+        # employee buttons when a quality is selected.
         sql = """
-            SELECT DISTINCT
-                   w.mc_eb_id                                AS eb_id,
+            SELECT w.mc_eb_id                                AS eb_id,
                    o.emp_code,
-                   SUBSTR(COALESCE(p.first_name,''), 1, 7)  AS emp_name
+                   SUBSTR(COALESCE(p.first_name,''), 1, 7)  AS emp_name,
+                   GROUP_CONCAT(DISTINCT w.quality_id)       AS quality_ids
               FROM daily_doff_frames_winding w
               LEFT JOIN hrms_ed_official_details o ON o.eb_id = w.mc_eb_id
               LEFT JOIN hrms_ed_personal_details p ON p.eb_id = w.mc_eb_id
@@ -1708,6 +1711,7 @@ def get_winding_entry2_employees():
                AND w.branch_id = %s
                AND w.spg_wdg  = 'W'
                AND (w.active IS NULL OR w.active = 1)
+             GROUP BY w.mc_eb_id, o.emp_code, emp_name
              ORDER BY o.emp_code
         """
         params = (d, spell_id, spell_id, branch_id)
@@ -1716,13 +1720,28 @@ def get_winding_entry2_employees():
         cur.execute(sql, params)
         rows = cur.fetchall()
         cur.close(); db.close()
+
+        def _qids(v):
+            if not v:
+                return []
+            out = []
+            for part in str(v).split(','):
+                part = part.strip()
+                if part and part.lower() != 'null':
+                    try:
+                        out.append(int(part))
+                    except ValueError:
+                        pass
+            return out
+
         return jsonify({
             'status':    'success',
             'employees': [
                 {
-                    'eb_id':    int(r['eb_id']) if r['eb_id'] is not None else None,
-                    'emp_code': r['emp_code'] or '',
-                    'emp_name': (r['emp_name'] or '').strip(),
+                    'eb_id':       int(r['eb_id']) if r['eb_id'] is not None else None,
+                    'emp_code':    r['emp_code'] or '',
+                    'emp_name':    (r['emp_name'] or '').strip(),
+                    'quality_ids': _qids(r.get('quality_ids')),
                 }
                 for r in rows if r['eb_id'] is not None
             ]
@@ -1763,6 +1782,7 @@ def _ensure_we2_schema():
         if 'created_at'   not in existing: adds.append("ADD COLUMN created_at DATETIME NULL")
         if 'no_of_spools' not in existing: adds.append("ADD COLUMN no_of_spools INT NULL")
         if 'no_of_spindle' not in existing: adds.append("ADD COLUMN no_of_spindle INT NULL")
+        if 'quality_id'   not in existing: adds.append("ADD COLUMN quality_id INT NULL")
         if adds:
             cur.execute("ALTER TABLE daily_doff_frames_winding " + ", ".join(adds))
             db.commit()
@@ -1855,6 +1875,62 @@ def get_winding_entry2_spool_types():
                     'bucket_weight': float(r['bucket_weight'] or 0),
                 }
                 for r in rows
+            ]
+        })
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+# -- GET /doff/winding-entry-2-qualities --------------------------------------
+@doff_bp.route('/doff/winding-entry-2-qualities', methods=['GET'])
+def winding_entry2_qualities():
+    """Distinct winding qualities selected in the winding frame entry for a
+    given date/spell/branch.
+
+    Reads daily_doff_frames_winding rows where spg_wdg='W' and quality_id is
+    set (the per-employee winding assignment rows), returning each distinct
+    quality once. Used to populate the quality buttons on Winding Entry (2).
+    ?date=YYYY-MM-DD&spell_id=<id>&branch_id=<id>
+    """
+    _ensure_we2_schema()
+    d         = request.args.get('date')
+    spell_id  = request.args.get('spell_id',  type=int)
+    branch_id = request.args.get('branch_id', type=int)
+    if not (d and spell_id and branch_id):
+        return jsonify({'status': 'error',
+                        'message': 'date, spell_id and branch_id required'}), 400
+    try:
+        db  = get_db()
+        cur = db.cursor(dictionary=True)
+        cur.execute("""
+            SELECT DISTINCT w.quality_id      AS quality_id,
+                            q.wng_quality     AS quality_name,
+                            q.Spool_cop       AS spool_cop
+              FROM daily_doff_frames_winding w
+              LEFT JOIN winding_quality_master q
+                     ON q.wng_quality_mst_id = w.quality_id
+             WHERE w.tran_date = %s
+               AND (w.spell_id = %s OR w.spell = %s)
+               AND w.branch_id = %s
+               AND w.spg_wdg   = 'W'
+               AND w.quality_id IS NOT NULL
+               AND (w.active IS NULL OR w.active = 1)
+             ORDER BY q.wng_quality
+        """, (d, spell_id, spell_id, branch_id))
+        rows = cur.fetchall()
+        cur.close(); db.close()
+        return jsonify({
+            'status': 'success',
+            'qualities': [
+                {
+                    'quality_id':   int(r['quality_id']),
+                    'quality_name': r.get('quality_name') or f"Q{r['quality_id']}",
+                    # 'S' = spool, 'C' = cop. Qualities of different spool_cop
+                    # cannot be selected together on the entry screen.
+                    'spool_cop':    (r.get('spool_cop') or '').strip().upper() or None,
+                }
+                for r in rows if r.get('quality_id') is not None
             ]
         })
     except Exception as e:
@@ -1955,6 +2031,12 @@ def save_winding_entry2():
         net_wt = gross_wt - tare_wt
     net_wt     = float(net_wt)
     user_id    = data.get('user_id') or 0
+    quality_id = data.get('quality_id')
+    if quality_id is not None:
+        try:
+            quality_id = int(quality_id)
+        except (TypeError, ValueError):
+            quality_id = None
     no_of_spools = data.get('no_of_spools')
     if no_of_spools is not None:
         try:
@@ -2022,12 +2104,12 @@ def save_winding_entry2():
             cur.execute("""
                 INSERT INTO daily_doff_frames_winding
                     (tran_date, spell, spell_id, mc_eb_id, eb_id, sc_type,
-                     trolly_id, gross_weight, tare_weight, net_weight,
+                     trolly_id, quality_id, gross_weight, tare_weight, net_weight,
                      no_of_spools, no_of_spindle, spg_wdg, branch_id, active, user_id, created_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                         %s, %s, 'W', %s, 1, %s, NOW())
             """, (d, spell_id, spell_id, eb, eb, sc_type,
-                  trolly_id, gross_parts[i], tare_parts[i], net_parts[i],
+                  trolly_id, quality_id, gross_parts[i], tare_parts[i], net_parts[i],
                   spool_parts[i], spindle_parts[i], branch_id, user_id))
             new_ids.append(cur.lastrowid)
         db.commit()
@@ -2077,15 +2159,36 @@ def winding_entry2_summary():
     try:
         db  = get_db()
         cur = db.cursor(dictionary=True)
+        # quality_name = the quality stored on the weighing row, falling back to
+        # the quality assigned to this employee in the winding frame entry. The
+        # fallback uses a scalar subquery so the weighing rows are never
+        # multiplied (an employee may map to more than one assignment row).
         cur.execute("""
             SELECT  w.eb_id,
                     o.emp_code,
                     SUBSTR(COALESCE(p.first_name,''), 1, 7) AS emp_name,
                     w.net_weight,
-                    w.daily_doff_frm_wdg_id AS id
+                    w.daily_doff_frm_wdg_id AS id,
+                    COALESCE(
+                        qd.wng_quality,
+                        (SELECT q2.wng_quality
+                           FROM daily_doff_frames_winding a
+                           JOIN winding_quality_master q2
+                             ON q2.wng_quality_mst_id = a.quality_id
+                          WHERE a.mc_eb_id   = w.eb_id
+                            AND a.eb_id IS NULL
+                            AND a.spg_wdg    = 'W'
+                            AND a.tran_date  = w.tran_date
+                            AND a.branch_id  = w.branch_id
+                            AND (a.spell_id  = w.spell_id OR a.spell = w.spell)
+                            AND a.quality_id IS NOT NULL
+                          ORDER BY a.daily_doff_frm_wdg_id DESC
+                          LIMIT 1)
+                    ) AS quality_name
               FROM daily_doff_frames_winding w
               LEFT JOIN hrms_ed_official_details o ON o.eb_id = w.eb_id
               LEFT JOIN hrms_ed_personal_details p ON p.eb_id = w.eb_id
+              LEFT JOIN winding_quality_master qd ON qd.wng_quality_mst_id = w.quality_id
              WHERE w.tran_date = %s
                AND (w.spell_id = %s OR w.spell = %s)
                AND w.branch_id = %s
@@ -2105,6 +2208,7 @@ def winding_entry2_summary():
                     'eb_id':      int(key) if key is not None else None,
                     'emp_code':   r['emp_code'] or '',
                     'emp_name':   (r['emp_name'] or '').strip(),
+                    'quality_names': [],
                     'weights':    [],
                     'no_of_doff': 0,
                     'total_wt':   0.0,
@@ -2113,9 +2217,13 @@ def winding_entry2_summary():
             grouped[key]['weights'].append(wt)
             grouped[key]['no_of_doff'] += 1
             grouped[key]['total_wt']   += wt
+            qn = (r.get('quality_name') or '').strip()
+            if qn and qn not in grouped[key]['quality_names']:
+                grouped[key]['quality_names'].append(qn)
         summary = list(grouped.values())
         for s in summary:
             s['total_wt'] = round(s['total_wt'], 3)
+            s['quality_name'] = ', '.join(s.pop('quality_names'))
         return jsonify({'status': 'success', 'summary': summary})
     except Exception as e:
         traceback.print_exc()
@@ -2150,11 +2258,28 @@ def winding_entry2_detail():
                     w.gross_weight,
                     w.tare_weight,
                     w.net_weight,
-                    w.no_of_spools
+                    w.no_of_spools,
+                    COALESCE(
+                        qd.wng_quality,
+                        (SELECT q2.wng_quality
+                           FROM daily_doff_frames_winding a
+                           JOIN winding_quality_master q2
+                             ON q2.wng_quality_mst_id = a.quality_id
+                          WHERE a.mc_eb_id   = w.eb_id
+                            AND a.eb_id IS NULL
+                            AND a.spg_wdg    = 'W'
+                            AND a.tran_date  = w.tran_date
+                            AND a.branch_id  = w.branch_id
+                            AND (a.spell_id  = w.spell_id OR a.spell = w.spell)
+                            AND a.quality_id IS NOT NULL
+                          ORDER BY a.daily_doff_frm_wdg_id DESC
+                          LIMIT 1)
+                    ) AS quality_name
               FROM daily_doff_frames_winding w
               LEFT JOIN hrms_ed_official_details o ON o.eb_id = w.eb_id
               LEFT JOIN hrms_ed_personal_details p ON p.eb_id = w.eb_id
               LEFT JOIN trolly_mst              t ON t.trolly_id = w.trolly_id
+              LEFT JOIN winding_quality_master qd ON qd.wng_quality_mst_id = w.quality_id
              WHERE w.tran_date = %s
                AND (w.spell_id = %s OR w.spell = %s)
                AND w.branch_id = %s
@@ -2176,6 +2301,7 @@ def winding_entry2_detail():
                 'sc_type':      r['sc_type'],
                 'trolly_id':    r['trolly_id'],
                 'trolly_name':  r['trolly_name'],
+                'quality_name': (r.get('quality_name') or '').strip() or None,
                 'gross_weight': float(r['gross_weight']) if r['gross_weight'] is not None else None,
                 'tare_weight':  float(r['tare_weight'])  if r['tare_weight']  is not None else None,
                 'net_weight':   float(r['net_weight'])   if r['net_weight']   is not None else None,
