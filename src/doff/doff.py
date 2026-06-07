@@ -2055,6 +2055,19 @@ def save_winding_entry2():
     if not eb_ids:
         single = data.get('eb_id')
         eb_ids = [single] if single else []
+
+    # Optional per-employee spool counts, aligned to eb_ids. When present, each
+    # employee's row stores its own spool count instead of the split total.
+    eb_spools = data.get('eb_spools') or []
+    eb_spool_map = {}
+    for idx, e in enumerate(eb_ids):
+        if not e or idx >= len(eb_spools):
+            continue
+        try:
+            eb_spool_map[e] = int(eb_spools[idx])
+        except (TypeError, ValueError):
+            pass
+
     seen = set()
     eb_ids = [e for e in eb_ids if e and not (e in seen or seen.add(e))]
 
@@ -2068,16 +2081,6 @@ def save_winding_entry2():
 
     n = len(eb_ids)
 
-    def split_equally(total):
-        """Split total into n parts (3 dp); last part absorbs the remainder."""
-        total = round(float(total or 0), 3)
-        if n <= 1:
-            return [total]
-        share = round(total / n, 3)
-        parts = [share] * (n - 1)
-        parts.append(round(total - share * (n - 1), 3))
-        return parts
-
     def split_int(total):
         """Split an integer count into n parts; last part absorbs the remainder."""
         if total is None:
@@ -2090,11 +2093,40 @@ def save_winding_entry2():
         parts.append(total - share * (n - 1))
         return parts
 
-    gross_parts = split_equally(gross_wt)
-    tare_parts  = split_equally(tare_wt)
-    # Net weight is stored as a whole number (no decimals); split into integer
-    # parts so each employee's row stays whole and the parts sum to the entered net.
-    net_parts   = split_int(net_wt)
+    # Per-employee weights for proportional splitting. When per-employee spool
+    # counts are supplied, weights = those counts (an employee with more spools
+    # gets a proportionally larger share); otherwise fall back to an equal split.
+    if eb_spool_map and sum(eb_spool_map.get(eb, 0) for eb in eb_ids) > 0:
+        weights = [eb_spool_map.get(eb, 0) for eb in eb_ids]
+    else:
+        weights = [1] * n
+    wsum = sum(weights) or 1
+
+    def split_proportional(total, as_int=False):
+        """Split total across rows in proportion to `weights`.
+        e.g. net 320 with spools [8,5,8] -> [round(320/21*8), round(320/21*5),
+        last]; the last row absorbs the rounding remainder so parts sum to total.
+        """
+        total_f = float(total or 0)
+        if n <= 1:
+            v = round(total_f) if as_int else round(total_f, 3)
+            return [int(v) if as_int else v]
+        parts = []
+        acc = 0.0
+        for i in range(n - 1):
+            p = round(total_f * weights[i] / wsum) if as_int \
+                else round(total_f * weights[i] / wsum, 3)
+            parts.append(p)
+            acc += p
+        last = total_f - acc
+        parts.append(int(round(last)) if as_int else round(last, 3))
+        return parts
+
+    gross_parts = split_proportional(gross_wt)
+    tare_parts  = split_proportional(tare_wt)
+    # Net weight is stored as a whole number (no decimals); split proportionally
+    # to the spool counts so each employee's row stays whole and parts sum to net.
+    net_parts   = split_proportional(net_wt, as_int=True)
     spool_parts = split_int(no_of_spools)
     spindle_parts = split_int(no_of_spindle)
 
@@ -2103,6 +2135,8 @@ def save_winding_entry2():
         cur = db.cursor()
         new_ids = []
         for i, eb in enumerate(eb_ids):
+            # Per-employee spool count when supplied; else the split total.
+            row_spool = eb_spool_map.get(eb, spool_parts[i])
             cur.execute("""
                 INSERT INTO daily_doff_frames_winding
                     (tran_date, spell, spell_id, mc_eb_id, eb_id, sc_type,
@@ -2112,7 +2146,7 @@ def save_winding_entry2():
                         %s, %s, 'W', %s, 1, %s, NOW())
             """, (d, spell_id, spell_id, eb, eb, sc_type,
                   trolly_id, quality_id, gross_parts[i], tare_parts[i], net_parts[i],
-                  spool_parts[i], spindle_parts[i], branch_id, user_id))
+                  row_spool, spindle_parts[i], branch_id, user_id))
             new_ids.append(cur.lastrowid)
         db.commit()
         cur.close(); db.close()
@@ -2205,6 +2239,7 @@ def winding_entry2_summary():
                     o.emp_code,
                     SUBSTR(COALESCE(p.first_name,''), 1, 7) AS emp_name,
                     w.net_weight,
+                    w.no_of_spools,
                     w.daily_doff_frm_wdg_id AS id,
                     COALESCE(
                         qd.wng_quality,
@@ -2247,11 +2282,13 @@ def winding_entry2_summary():
                     'emp_name':   (r['emp_name'] or '').strip(),
                     'quality_names': [],
                     'weights':    [],
+                    'no_of_spools': 0,
                     'no_of_doff': 0,
                     'total_wt':   0.0,
                 }
             wt = float(r['net_weight'] or 0)
             grouped[key]['weights'].append(wt)
+            grouped[key]['no_of_spools'] += int(r.get('no_of_spools') or 0)
             grouped[key]['no_of_doff'] += 1
             grouped[key]['total_wt']   += wt
             qn = (r.get('quality_name') or '').strip()
