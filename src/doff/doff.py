@@ -2082,7 +2082,7 @@ def save_winding_entry2():
         """Split an integer count into n parts; last part absorbs the remainder."""
         if total is None:
             return [None] * n
-        total = int(total)
+        total = int(round(float(total)))
         if n <= 1:
             return [total]
         share = total // n
@@ -2092,7 +2092,9 @@ def save_winding_entry2():
 
     gross_parts = split_equally(gross_wt)
     tare_parts  = split_equally(tare_wt)
-    net_parts   = split_equally(net_wt)
+    # Net weight is stored as a whole number (no decimals); split into integer
+    # parts so each employee's row stays whole and the parts sum to the entered net.
+    net_parts   = split_int(net_wt)
     spool_parts = split_int(no_of_spools)
     spindle_parts = split_int(no_of_spindle)
 
@@ -2146,19 +2148,54 @@ def delete_winding_entry2(rec_id):
 @doff_bp.route('/doff/winding-entry-2-summary', methods=['GET'])
 def winding_entry2_summary():
     """Grouped summary for Winding Entry (2) - grouped by employee.
-    ?date=YYYY-MM-DD&spell_id=<id>&branch_id=<id>
+    ?date=YYYY-MM-DD&spell_id=<id>&branch_id=<id>[&quality_id=<csv>]
+    When quality_id is given (single id or comma-separated list) the summary is
+    filtered to rows whose effective quality (the weighing row's quality, or the
+    frame-assigned quality when the row has none) is one of those ids. When it is
+    omitted/blank the summary is based on date+spell only (original behaviour).
     Returns: [{eb_id, emp_code, emp_name, weights:[], no_of_doff, total_wt}]
     """
     _ensure_we2_schema()
     d         = request.args.get('date')
     spell_id  = request.args.get('spell_id',  type=int)
     branch_id = request.args.get('branch_id', type=int)
+    # Optional quality filter: single id or comma-separated list of ids.
+    quality_ids = []
+    for tok in (request.args.get('quality_id') or '').split(','):
+        tok = tok.strip()
+        if tok:
+            try:
+                quality_ids.append(int(tok))
+            except ValueError:
+                pass
     if not (d and spell_id and branch_id):
         return jsonify({'status': 'error',
                         'message': 'date, spell_id and branch_id required'}), 400
     try:
         db  = get_db()
         cur = db.cursor(dictionary=True)
+        # When a quality filter is supplied, restrict to rows whose effective
+        # quality (row quality, else frame-assigned quality) is in the list.
+        quality_clause = ''
+        quality_params = []
+        if quality_ids:
+            placeholders = ','.join(['%s'] * len(quality_ids))
+            quality_clause = """
+               AND COALESCE(
+                       w.quality_id,
+                       (SELECT a.quality_id
+                          FROM daily_doff_frames_winding a
+                         WHERE a.mc_eb_id   = w.eb_id
+                           AND a.eb_id IS NULL
+                           AND a.spg_wdg    = 'W'
+                           AND a.tran_date  = w.tran_date
+                           AND a.branch_id  = w.branch_id
+                           AND (a.spell_id  = w.spell_id OR a.spell = w.spell)
+                           AND a.quality_id IS NOT NULL
+                         ORDER BY a.daily_doff_frm_wdg_id DESC
+                         LIMIT 1)
+                   ) IN (""" + placeholders + ")"
+            quality_params = quality_ids
         # quality_name = the quality stored on the weighing row, falling back to
         # the quality assigned to this employee in the winding frame entry. The
         # fallback uses a scalar subquery so the weighing rows are never
@@ -2194,9 +2231,9 @@ def winding_entry2_summary():
                AND w.branch_id = %s
                AND w.spg_wdg   = 'W'
                AND w.net_weight IS NOT NULL
-               AND (w.active IS NULL OR w.active = 1)
+               AND (w.active IS NULL OR w.active = 1)""" + quality_clause + """
              ORDER BY w.eb_id, w.daily_doff_frm_wdg_id
-        """, (d, spell_id, spell_id, branch_id))
+        """, (d, spell_id, spell_id, branch_id, *quality_params))
         rows = cur.fetchall()
         cur.close(); db.close()
         from collections import OrderedDict
