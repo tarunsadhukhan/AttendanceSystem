@@ -11,11 +11,13 @@ Tables (sjm database):
   - spell_mst            (spell_id, spell_name, ...)
   - hrms_ed_official_details / hrms_ed_personal_details (employee lookup)
 """
+import os
 import traceback
 from datetime import datetime, date as date_cls
 
 from flask import Blueprint, request, jsonify
 from db import get_db
+from src.send_whatsapp import send_text
 
 doff_bp = Blueprint('doff', __name__)
 
@@ -33,6 +35,95 @@ def _to_str(v):
     return str(v)
 
 
+# â”€â”€ WhatsApp notify (Meta Cloud API) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+def _wa_clean_number(mobno):
+    """Normalise a recipient number to Cloud API form: digits only, no +.
+
+    A bare 10-digit local number gets the default country code (WHATSAPP_DEFAULT_CC,
+    default 91) prepended so Meta can route it.
+    """
+    if not mobno:
+        return None
+    digits = ''.join(ch for ch in str(mobno) if ch.isdigit())
+    if not digits:
+        return None
+    if len(digits) == 10:
+        digits = os.environ.get('WHATSAPP_DEFAULT_CC', '91') + digits
+    return digits
+
+
+def _doff_frame_no(mc_id):
+    """Return a human frame number for a machine: mech_posting_code (e.g. 32),
+    falling back to machine_name (e.g. 'Frame No 32'). None on lookup failure."""
+    if mc_id is None:
+        return None
+    try:
+        db  = get_db()
+        cur = db.cursor(dictionary=True)
+        cur.execute("""
+            SELECT mech_posting_code, machine_name
+            FROM machine_mst
+            WHERE machine_id = %s
+        """, (mc_id,))
+        m = cur.fetchone() or {}
+        cur.close(); db.close()
+    except Exception as ex:
+        print('WhatsApp frame lookup failed:', ex)
+        return None
+    if m.get('mech_posting_code') is not None:
+        return str(m['mech_posting_code'])
+    if m.get('machine_name'):
+        return str(m['machine_name']).strip()
+    return None
+
+
+def _notify_doff_saved(mc_id=None, net_weight=None, updated_dt=None):
+    """Notify all spinning recipients (tbl_whatsapp_send.msg_for='S') that a
+    doff record was saved. The message carries the frame no, net weight and the
+    time. Best-effort: any failure is logged, never raised."""
+    frame_no = _doff_frame_no(mc_id)
+
+    try:
+        db  = get_db()
+        cur = db.cursor(dictionary=True)
+        cur.execute("""
+            SELECT name, mobno, from_msg
+            FROM tbl_whatsapp_send
+            WHERE msg_for = 'S'
+        """)
+        recipients = cur.fetchall()
+        cur.close(); db.close()
+    except Exception as ex:
+        print('WhatsApp recipient lookup failed:', ex)
+        return
+
+    # Build the message body: Frame No / Net Wt / At Time / Data Recorded.
+    try:
+        net_txt = str(round(float(net_weight), 3)) if net_weight is not None else ''
+    except Exception:
+        net_txt = str(net_weight or '')
+    if updated_dt is not None and hasattr(updated_dt, 'strftime'):
+        time_txt = updated_dt.strftime('%d-%m-%Y %H:%M')
+    else:
+        time_txt = str(updated_dt or '')
+    body = (
+        f'Frame No : {frame_no or ""} , '
+        f'Net Wt : {net_txt} , '
+        f'At Time : {time_txt} , '
+        f'Data Recorded'
+    )
+
+    print(f'WhatsApp: {len(recipients)} recipient(s) with msg_for=S')
+    for r in recipients:
+        to_number = _wa_clean_number(r.get('mobno'))
+        if not to_number:
+            print('WhatsApp: skipping row with empty/invalid mobno:', r.get('mobno'))
+            continue
+        ok, info = send_text(to_number, body)
+        print('WhatsApp: send to', to_number, '->', 'OK' if ok else 'FAILED', '|', info)
+
+
 # â”€â”€ GET /spells â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 @doff_bp.route('/spells', methods=['GET'])
@@ -41,7 +132,7 @@ def get_spells():
         db = get_db()
         cur = db.cursor(dictionary=True)
         branch_id = request.args.get('branch_id', type=int)
-        print('Received branch_id for spells:', branch_id)
+        #print('Received branch_id for spells:', branch_id)
         params = []
         if branch_id:
             sql = """
@@ -57,7 +148,7 @@ def get_spells():
             FROM spell_mst
             WHERE (status IS NULL OR status = 1)"""
         sql += " ORDER BY spell_name"
-        print('Executing SQL:', sql, 'with params:', params)
+        #print('Executing SQL:', sql, 'with params:', params)
             
         try:
             cur.execute(sql, tuple(params))
@@ -218,8 +309,8 @@ def list_doff_transactions():
             sql += " AND d.mc_id = %s";     params.append(mc_id)
         sql += " ORDER BY d.doff_date DESC, d.daily_doff_tbl_id DESC"
 
-        print('GET /doff-transactions SQL:', sql)
-        print('GET /doff-transactions params:', params)
+        #print('GET /doff-transactions SQL:', sql)
+        #print('GET /doff-transactions params:', params)
         cur.execute(sql, tuple(params))
         rows = cur.fetchall()
         print('GET /doff-transactions row count:', len(rows))
@@ -310,8 +401,8 @@ def save_doff_transaction():
         missing = [f for f, v in [('doff_date', doff_date), ('spell_id', spell_id),
                                    ('mc_id', mc_id), ('trolly_id', trolly_id),
                                    ('branch_id', branch_id)] if not v]
-        print('POST /doff-transactions data:', data)
-        print('POST /doff-transactions missing fields:', missing)
+        #print('POST /doff-transactions data:', data)
+        #print('POST /doff-transactions missing fields:', missing)
         if missing:
             return jsonify({'status': 'error',
                             'message': f'Missing required fields: {", ".join(missing)}'}), 400
@@ -333,8 +424,8 @@ def save_doff_transaction():
             params = (doff_date, spell_id, mc_id, quality_id, trolly_id,
                       gross_weight, tare_weight, net_weight, weight_type, branch_id,
                       user_id, now, rec_id)
-            print('POST /doff-transactions UPDATE SQL:', sql)
-            print('POST /doff-transactions UPDATE params:', params)
+            #print('POST /doff-transactions UPDATE SQL:', sql)
+            #print('POST /doff-transactions UPDATE params:', params)
             cur.execute(sql, params)
             saved_id = rec_id
         else:
@@ -351,13 +442,22 @@ def save_doff_transaction():
             params = (doff_date, spell_id, mc_id, quality_id, trolly_id,
                       gross_weight, tare_weight, net_weight, branch_id,
                       user_id, now, weight_type)
-            print('POST /doff-transactions INSERT SQL:', sql)
+            #print('POST /doff-transactions INSERT SQL:', sql)
             print('POST /doff-transactions INSERT params:', params)
             cur.execute(sql, params)
             saved_id = cur.lastrowid
 
         db.commit()
         cur.close(); db.close()
+
+        # WhatsApp notify spinning recipients -- only on new inserts, and never
+        # let a messaging failure break the save response.
+        if not rec_id:
+            try:
+                _notify_doff_saved(mc_id=mc_id, net_weight=net_weight, updated_dt=now)
+            except Exception as ex:
+                print('WhatsApp notify failed (ignored):', ex)
+
         return jsonify({'status': 'success',
                         'message': 'Doff entry saved successfully',
                         'id': saved_id})
@@ -427,62 +527,15 @@ def winding_entry2_quality_shift_report():
         return jsonify({'status': 'error', 'message': 'branch_id is required'}), 400
     
     try:
-        db = get_db()
-        cur = db.cursor(dictionary=True)
-        
-        # Query: Get quality-wise shift-wise totals
-        # Note: Using wng_quality from winding_quality_master table
-        cur.execute("""
-            SELECT 
-                COALESCE(q.wng_quality, 'Unknown') AS quality_name,
-                COALESCE(SUM(CASE WHEN s.spell_name LIKE '%%A%%' THEN w.net_weight ELSE 0 END), 0) AS shift_a,
-                COALESCE(SUM(CASE WHEN s.spell_name LIKE '%%B%%' THEN w.net_weight ELSE 0 END), 0) AS shift_b,
-                COALESCE(SUM(CASE WHEN s.spell_name LIKE '%%C%%' THEN w.net_weight ELSE 0 END), 0) AS shift_c,
-                COALESCE(SUM(w.net_weight), 0) AS total
-            FROM daily_doff_frames_winding w
-			left join daily_doff_frames_winding ddfw on ddfw.mc_eb_id =w.eb_id and ddfw.tran_date =w.tran_date 
-			and ddfw.spell =w.spell and ddfw.eb_id is null
-            LEFT JOIN spell_mst s ON w.spell_id = s.spell_id
-            LEFT JOIN winding_quality_master q ON ddfw.quality_id = q.wng_quality_mst_id
-            WHERE w.tran_date = %s
-              AND w.branch_id = %s
-              AND w.spg_wdg = 'W'
-              AND w.net_weight IS NOT NULL
-              AND (w.active IS NULL OR w.active = 1)
-            GROUP BY q.wng_quality
-            ORDER BY q.wng_quality
-        """, (d, branch_id))
-        
-        report_rows = cur.fetchall()
-        
-        # Calculate grand totals
-        grand_total_a = sum(float(row['shift_a'] or 0) for row in report_rows)
-        grand_total_b = sum(float(row['shift_b'] or 0) for row in report_rows)
-        grand_total_c = sum(float(row['shift_c'] or 0) for row in report_rows)
-        grand_total = sum(float(row['total'] or 0) for row in report_rows)
-        
-        # Convert to float for JSON serialization
-        for row in report_rows:
-            row['shift_a'] = float(row['shift_a'] or 0)
-            row['shift_b'] = float(row['shift_b'] or 0)
-            row['shift_c'] = float(row['shift_c'] or 0)
-            row['total'] = float(row['total'] or 0)
-        
-        cur.close()
-        db.close()
-        
+        # Shared with the scheduled WhatsApp PDF report (src/spg_report.py).
+        from src.spg_report import fetch_winding_quality_shift
+        report_rows, grand_total = fetch_winding_quality_shift(d, branch_id)
         return jsonify({
             'status': 'success',
             'message': 'Quality-wise shift-wise report generated',
             'report': report_rows,
-            'grand_total': {
-                'shift_a': grand_total_a,
-                'shift_b': grand_total_b,
-                'shift_c': grand_total_c,
-                'total': grand_total
-            }
+            'grand_total': grand_total
         })
-        
     except Exception as e:
         traceback.print_exc()
         return jsonify({'status': 'error', 'message': str(e)}), 500
@@ -781,11 +834,44 @@ def get_spg1_summary():
             ORDER BY m.mech_posting_code, dt.daily_doff_tbl_id
         """
         params = (d, spell_id, branch_id, d, spell_id, branch_id)
-        print('GET /doff/spg1-summary SQL:', sql)
-        print('GET /doff/spg1-summary params:', params)
+        #print('GET /doff/spg1-summary SQL:', sql)
+        #print('GET /doff/spg1-summary params:', params)
         cur.execute(sql, params)
         rows = cur.fetchall()
+
+        # SPG1 doff rows carry no quality_id (saved as NULL); the quality is
+        # mapped per frame in daily_doff_frames_winding. Fetch the distinct
+        # quality names per machine for this date/spell/branch.
+        qsql = """
+            SELECT f.mc_eb_id        AS mc_id,
+                   q.spg_quality     AS quality_name
+            FROM daily_doff_frames_winding f
+            INNER JOIN spinning_quality_mst q
+                    ON q.spg_quality_mst_id = f.quality_id
+            WHERE f.tran_date = %s
+              AND f.spell     = %s
+              AND f.branch_id = %s
+              AND (f.spg_wdg IS NULL OR f.spg_wdg = 'S')
+              AND (f.active  IS NULL OR f.active  = 1)
+              AND f.quality_id IS NOT NULL
+            GROUP BY f.mc_eb_id, q.spg_quality
+            ORDER BY f.mc_eb_id, q.spg_quality
+        """
+        cur.execute(qsql, (d, spell_id, branch_id))
+        qrows = cur.fetchall()
         cur.close(); db.close()
+
+        # mc_id -> [distinct quality names, in order]
+        qualities_by_mc = {}
+        for qr in qrows:
+            mc = qr['mc_id']
+            qn = (qr.get('quality_name') or '').strip()
+            if not qn:
+                continue
+            lst = qualities_by_mc.setdefault(mc, [])
+            if qn not in lst:
+                lst.append(qn)
+
         # Group by mc_id
         from collections import OrderedDict
         grouped = OrderedDict()
@@ -810,6 +896,7 @@ def get_spg1_summary():
         summary = list(grouped.values())
         for s in summary:
             s['total_wt'] = round(s['total_wt'], 3)
+            s['quality_name'] = ', '.join(qualities_by_mc.get(s['mc_id'], []))
         return jsonify({'status': 'success', 'summary': summary})
     except Exception as e:
         traceback.print_exc()
@@ -2397,38 +2484,15 @@ def get_spg1_quality_shift_report():
             return jsonify({'status': 'error', 'message': 'date is required'}), 400
         if not branch_id:
             return jsonify({'status': 'error', 'message': 'branch_id is required'}), 400
-        db = get_db()
-        cursor = db.cursor(dictionary=True)
-        sql="""        SELECT
-                COALESCE(concat(spg_type_name,' ',q.spg_quality,' ',q.speed,' RPM') , 'Unknown') AS quality_name,
-                COALESCE(SUM(CASE WHEN s.spell_name LIKE '%A%' THEN d.net_weight ELSE 0 END), 0) AS shift_a,
-                COALESCE(SUM(CASE WHEN s.spell_name LIKE '%B%' THEN d.net_weight ELSE 0 END), 0) AS shift_b,
-                COALESCE(SUM(CASE WHEN s.spell_name LIKE '%C%' THEN d.net_weight ELSE 0 END), 0) AS shift_c,
-                COALESCE(SUM(d.net_weight), 0) AS total
-            FROM daily_doff_tbl d
-            LEFT JOIN spell_mst s ON d.spell = s.spell_id
-			left join daily_doff_frames_winding ddfw on ddfw.tran_date =d.doff_date and ddfw.spell =d.spell 
-			and ddfw.mc_eb_id =d.mc_id and ddfw.active =1 and spg_wdg='S'
-            LEFT JOIN spinning_quality_mst q ON ddfw.quality_id = q.spg_quality_mst_id 
-            left join spinning_type_mst stm on stm.spg_type_mst_id =q.spg_type_id 
-            WHERE d.doff_date = %s AND d.branch_id = %s
-              AND (d.active IS NULL OR d.active = 1)
-            GROUP BY concat(spg_type_name,' ',q.spg_quality,' ',q.speed) ORDER BY concat(spg_type_name,' ',q.spg_quality,' ',q.speed)
-        """
-        query = sql
-        cursor.execute(query, (date_str, branch_id))
-        report_rows = cursor.fetchall()
-        grand_total_a = sum(row['shift_a'] for row in report_rows)
-        grand_total_b = sum(row['shift_b'] for row in report_rows)
-        grand_total_c = sum(row['shift_c'] for row in report_rows)
-        grand_total = sum(row['total'] for row in report_rows)
-        cursor.close()
-        db.close()
+        # Shared with the scheduled WhatsApp PDF report (src/spg_report.py) so the
+        # API and the daily report can never drift apart.
+        from src.spg_report import fetch_spg_quality_shift
+        report_rows, grand_total = fetch_spg_quality_shift(date_str, branch_id)
         return jsonify({
             'status': 'success',
             'message': 'Quality-wise shift-wise report generated',
             'report': report_rows,
-            'grand_total': {'shift_a': grand_total_a, 'shift_b': grand_total_b, 'shift_c': grand_total_c, 'total': grand_total}
+            'grand_total': grand_total
         })
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500

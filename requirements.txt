@@ -1,6 +1,8 @@
 flask
 flask-cors
 mysql-connector-python
+fpdf2
+APScheduler
 face-recognition
 numpy
 opencv-python-headless
