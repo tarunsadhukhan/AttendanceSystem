@@ -1114,6 +1114,124 @@ def save_winding_entry():
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Continuous Winding Entry  (table: tbl_cont_widning_entry)
+#   columns: cont_winding_ent_id, tran_date, quality_id, prod_kgs,
+#            updated_by, updated_date_time
+#   quality_id -> winding_quality_master.wng_quality_mst_id
+# ─────────────────────────────────────────────────────────────────────────────
+
+# -- GET /doff/cont-winding-entry ---------------------------------------------
+@doff_bp.route('/doff/cont-winding-entry', methods=['GET'])
+def list_cont_winding_entries():
+    """List continuous-winding rows for a tran_date, newest first."""
+    date_q = request.args.get('date')
+    if not date_q:
+        return jsonify({'status': 'error', 'message': 'date required'}), 400
+    try:
+        db  = get_db()
+        cur = db.cursor(dictionary=True)
+        cur.execute("""
+            SELECT c.cont_winding_ent_id AS id,
+                   c.tran_date,
+                   c.quality_id,
+                   q.wng_quality        AS quality_name,
+                   c.prod_kgs
+            FROM tbl_cont_widning_entry c
+            LEFT JOIN winding_quality_master q
+                   ON q.wng_quality_mst_id = c.quality_id
+            WHERE c.tran_date = %s
+            ORDER BY c.cont_winding_ent_id DESC
+        """, (date_q,))
+        rows = cur.fetchall()
+        cur.close(); db.close()
+        out = [{
+            'id':           r['id'],
+            'tran_date':    _to_str(r['tran_date']),
+            'quality_id':   r['quality_id'],
+            'quality_name': r['quality_name'],
+            'prod_kgs':     r['prod_kgs'],
+        } for r in rows]
+        return jsonify({'status': 'success', 'entries': out})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+# -- POST /doff/cont-winding-entry --------------------------------------------
+@doff_bp.route('/doff/cont-winding-entry', methods=['POST'])
+def save_cont_winding_entry():
+    """Insert a continuous-winding row.
+    Body: {date, quality_id, prod_kgs, user_id}
+    """
+    data       = request.get_json(silent=True) or {}
+    date_q     = data.get('date')
+    quality_id = data.get('quality_id')
+    prod_kgs   = data.get('prod_kgs')
+    user_id    = data.get('user_id') or 0
+    if not (date_q and quality_id is not None and prod_kgs is not None):
+        return jsonify({'status': 'error',
+                        'message': 'date, quality_id and prod_kgs required'}), 400
+    try:
+        db  = get_db()
+        cur = db.cursor()
+        cur.execute("""
+            INSERT INTO tbl_cont_widning_entry
+                (tran_date, quality_id, prod_kgs, updated_by)
+            VALUES (%s, %s, %s, %s)
+        """, (date_q, quality_id, prod_kgs, user_id))
+        db.commit()
+        new_id = cur.lastrowid
+        cur.close(); db.close()
+        return jsonify({'status': 'success', 'message': 'Saved', 'id': new_id})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+# -- PUT /doff/cont-winding-entry/<id> ----------------------------------------
+@doff_bp.route('/doff/cont-winding-entry/<int:rec_id>', methods=['PUT'])
+def update_cont_winding_entry(rec_id):
+    """Update quality_id / prod_kgs for a continuous-winding row."""
+    data       = request.get_json(silent=True) or {}
+    quality_id = data.get('quality_id')
+    prod_kgs   = data.get('prod_kgs')
+    user_id    = data.get('user_id') or 0
+    try:
+        db  = get_db()
+        cur = db.cursor()
+        cur.execute("""
+            UPDATE tbl_cont_widning_entry
+               SET quality_id = %s,
+                   prod_kgs   = %s,
+                   updated_by = %s
+             WHERE cont_winding_ent_id = %s
+        """, (quality_id, prod_kgs, user_id, rec_id))
+        db.commit()
+        cur.close(); db.close()
+        return jsonify({'status': 'success', 'message': 'Updated', 'id': rec_id})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+# -- DELETE /doff/cont-winding-entry/<id> -------------------------------------
+@doff_bp.route('/doff/cont-winding-entry/<int:rec_id>', methods=['DELETE'])
+def delete_cont_winding_entry(rec_id):
+    """Hard-delete a continuous-winding row."""
+    try:
+        db  = get_db()
+        cur = db.cursor()
+        cur.execute("DELETE FROM tbl_cont_widning_entry WHERE cont_winding_ent_id = %s",
+                    (rec_id,))
+        db.commit()
+        cur.close(); db.close()
+        return jsonify({'status': 'success', 'message': 'Deleted', 'id': rec_id})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
 # -- GET /doff/validate-trolly ------------------------------------------------
 @doff_bp.route('/doff/validate-trolly', methods=['GET'])
 def validate_doff_trolly():

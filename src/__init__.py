@@ -1,4 +1,4 @@
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 from flask_cors import CORS
 
 from src.auth.auth import auth_bp
@@ -37,6 +37,18 @@ def create_app(config_object=None):
 			'status': 'success',
 			'message': 'Attendance Server Running!'
 		})
+
+	@app.route('/run-spg-report', methods=['POST'])
+	def run_spg_report():
+		from datetime import date, datetime
+		from src.spg_report import send_daily_spg_report
+		d = request.args.get('date')
+		try:
+			report_date = datetime.strptime(d, '%Y-%m-%d').date() if d else date.today()
+		except ValueError:
+			return jsonify({'status': 'error', 'message': 'date must be YYYY-MM-DD'}), 400
+		send_daily_spg_report(report_date)
+		return jsonify({'status': 'success', 'date': report_date.isoformat()})
 
 	app.register_blueprint(auth_bp)
 	app.register_blueprint(attendance_bp)
