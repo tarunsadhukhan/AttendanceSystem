@@ -427,6 +427,40 @@ def list_machine_summary():
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 
+@otherentries_bp.route('/machine-departments', methods=['GET'])
+def list_machine_departments():
+    """Departments (dept_mst) that have machines, for the New Machine Entry grid.
+
+    mechine_code_master.dept_id references dept_mst.dept_id, so the department
+    dropdown must come from dept_mst (not the sub-department list). Only depts
+    that actually have active machines are returned.
+    Query params: ?branch_id=<id> (required)
+    Returns: { status, total, data: [ { id, name } ] }
+    """
+    try:
+        branch_id = request.args.get('branch_id', type=int)
+        if not branch_id:
+            return jsonify({'status': 'error', 'message': 'branch_id is required'}), 400
+
+        db = get_db()
+        cursor = db.cursor(dictionary=True)
+        cursor.execute("""
+            SELECT DISTINCT d.dept_id AS id, d.dept_desc AS name
+            FROM dept_mst d
+            JOIN mechine_code_master m ON m.dept_id = d.dept_id
+            WHERE d.branch_id = %s
+              AND m.branch_id = %s
+              AND (m.is_active IS NULL OR m.is_active = 1)
+            ORDER BY d.dept_desc
+        """, (branch_id, branch_id))
+        rows = cursor.fetchall()
+        cursor.close()
+        db.close()
+        return jsonify({'status': 'success', 'total': len(rows), 'data': rows})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
 @otherentries_bp.route('/machine-summary/<int:entry_id>', methods=['PUT'])
 def update_machine_summary(entry_id):
     """Update a machine-summary row; recompute shift_* from the spell values."""
