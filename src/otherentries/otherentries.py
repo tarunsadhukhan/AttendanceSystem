@@ -461,6 +461,58 @@ def list_machine_departments():
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 
+@otherentries_bp.route('/hands-report', methods=['GET'])
+def hands_report():
+    """Hands Report (man-machine) for a date + branch, from vw_man_machine.
+
+    Grouped client-side by department -> designation. Per shift A/B/C returns the
+    M/H standard (thands), actual Hands (hands) and Short (extra_short).
+    Query params: ?date=YYYY-MM-DD (required) & branch_id=<id> (optional)
+    Returns: { status, total, rows: [ { dept_desc, dept_code, desig, fv,
+               hands_a/b/c, thands_a/b/c, short_a/b/c } ] }
+    """
+    try:
+        date_str  = request.args.get('date')
+        branch_id = request.args.get('branch_id', type=int)
+        if not date_str:
+            return jsonify({'status': 'error', 'message': 'date is required'}), 400
+
+        db = get_db()
+        cursor = db.cursor(dictionary=True)
+        query = """
+            SELECT dept_desc, dept_code, desig, fv,
+                   hands_a, hands_b, hands_c,
+                   thands_a, thands_b, thands_c,
+                   extra_short_a AS short_a,
+                   extra_short_b AS short_b,
+                   extra_short_c AS short_c
+            FROM vw_man_machine
+            WHERE attendance_date = %s
+        """
+        params = [date_str]
+        if branch_id:
+            query += " AND branch_id = %s"
+            params.append(branch_id)
+        query += " ORDER BY dept_desc, desig"
+        cursor.execute(query, tuple(params))
+        rows = cursor.fetchall()
+        cursor.close()
+        db.close()
+
+        # vw_man_machine returns Decimals; coerce to float for JSON.
+        def f(v):
+            return None if v is None else float(v)
+        for r in rows:
+            for k in ('hands_a', 'hands_b', 'hands_c',
+                      'thands_a', 'thands_b', 'thands_c',
+                      'short_a', 'short_b', 'short_c'):
+                r[k] = f(r.get(k))
+
+        return jsonify({'status': 'success', 'total': len(rows), 'rows': rows})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
 @otherentries_bp.route('/machine-summary/<int:entry_id>', methods=['PUT'])
 def update_machine_summary(entry_id):
     """Update a machine-summary row; recompute shift_* from the spell values."""
