@@ -1,7 +1,8 @@
-"""Daily Spinning Production Summary — PDF report sent over WhatsApp.
+"""Daily Spinning Production Summary — PDF report sent over email.
 
 Sends a per-branch "Spinning Production Summary" PDF (quality x shift A/B/C
-totals) to WhatsApp recipients in tbl_whatsapp_send where msg_for='SR'.
+totals) to email recipients in tbl_whatsapp_send where msg_for in ('OE','SR')
+(using the email_id column).
 
 Schedule (server local time):
   - 15:00  -> report for the current date
@@ -18,7 +19,7 @@ from datetime import date, datetime, timedelta
 from fpdf import FPDF
 
 from db import get_db
-from src.send_whatsapp import send_document
+from src.send_email import send_document
 
 
 # -- data ---------------------------------------------------------------------
@@ -276,13 +277,13 @@ def active_branches():
 
 
 def report_recipients():
-    """Return [{name, mobno, from_msg}, ...] from tbl_whatsapp_send where msg_for='SR'."""
+    """Return [{name, mobno, from_msg, email_id}, ...] from tbl_whatsapp_send where msg_for in ('OE','SR')."""
     db = get_db()
     cur = db.cursor(dictionary=True)
     cur.execute("""
-        SELECT name, mobno, from_msg
+        SELECT name, mobno, from_msg, email_id
         FROM tbl_whatsapp_send
-        WHERE msg_for = 'SR'
+        WHERE msg_for IN ('OE', 'SR')
     """)
     rows = cur.fetchall()
     cur.close(); db.close()
@@ -466,21 +467,10 @@ def build_report_pdf(date_str, branch_name, jute, spinning, winding, out_path,
 
 # -- send ---------------------------------------------------------------------
 
-def _wa_clean_number(mobno):
-    if not mobno:
-        return None
-    digits = ''.join(ch for ch in str(mobno) if ch.isdigit())
-    if not digits:
-        return None
-    if len(digits) == 10:
-        digits = os.environ.get('WHATSAPP_DEFAULT_CC', '91') + digits
-    return digits
-
-
 def send_daily_spg_report(report_date):
-    """Build and WhatsApp the Spinning Production Summary for report_date (a date).
+    """Build and email the Spinning Production Summary for report_date (a date).
 
-    One PDF per active branch, sent to every msg_for='SR' recipient.
+    One PDF per active branch, emailed to every msg_for='SR' recipient.
     """
     date_str = report_date.strftime('%Y-%m-%d')
     disp_date = report_date.strftime('%d-%m-%Y')
@@ -489,9 +479,14 @@ def send_daily_spg_report(report_date):
         print('SPG report: no recipients (tbl_whatsapp_send msg_for=SR); skipping', date_str)
         return
 
-    numbers = [n for n in (_wa_clean_number(r.get('mobno')) for r in recipients) if n]
-    if not numbers:
-        print('SPG report: recipients have no valid mobno; skipping', date_str)
+    # Distinct, non-blank email addresses, preserving order.
+    emails = []
+    for r in recipients:
+        email = (r.get('email_id') or '').strip()
+        if email and email not in emails:
+            emails.append(email)
+    if not emails:
+        print('SPG report: recipients have no valid email_id; skipping', date_str)
         return
 
     # Other Entries (tbl_daily_finishing) has no branch column: fetch once,
@@ -528,9 +523,11 @@ def send_daily_spg_report(report_date):
 
         caption = 'Spinning & Winding Production Summary %s%s' % (
             disp_date, (' - ' + branch_name) if branch_name else '')
-        for num in numbers:
-            ok, info = send_document(num, out_path, caption=caption, filename=fname)
-            print('SPG report: branch', branch_id, '-> send to', num,
+        body = '%s\n\nPlease find the attached report.' % caption
+        for email in emails:
+            ok, info = send_document(email, out_path, subject=caption,
+                                     body=body, filename=fname)
+            print('SPG report: branch', branch_id, '-> email to', email,
                   '->', 'OK' if ok else 'FAILED', '|', info)
         try:
             os.remove(out_path)
