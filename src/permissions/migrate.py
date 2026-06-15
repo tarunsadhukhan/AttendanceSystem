@@ -145,8 +145,9 @@ _MENU_TREE = [
             {
                 "group": ("grp_jute", "Jute", 1, "ic_masters"),
                 "children": [
-                    ("menu_jute_received",   "Jute Received",   1, "ic_add", "JuteReceivedActivity",   0),
-                    ("menu_assorting_entry", "Assorting Entry", 2, "ic_add", "AssortingEntryActivity", 0),
+                    ("menu_jute_received",       "Jute Received",       1, "ic_add", "JuteReceivedActivity",       0),
+                    ("menu_assorting_entry",     "Assorting Entry",     2, "ic_add", "AssortingEntryActivity",     0),
+                    ("menu_jute_mukam_received", "Jute Mukam Received", 3, "ic_add", "JuteMukamReceivedActivity",  0),
                 ],
             },
             {
@@ -195,6 +196,7 @@ _SUPERVISOR_KEYS = (
     "menu_attendance_entry", "menu_attendance_reports",
     "grp_other_entries", "menu_leave_entries",
     "grp_production", "grp_jute", "menu_jute_received", "menu_assorting_entry",
+    "menu_jute_mukam_received",
     "grp_spreader_entry", "menu_production_entry", "menu_issue_entry",
     "menu_drawing_meter_entry", "menu_spinning_doff_entry",
     "grp_doff_entry", "menu_spellwise_frame_entry", "menu_spg_doff_entry",
@@ -208,6 +210,7 @@ _OPERATOR_KEYS = (
     "card_present",
     "grp_attendance", "menu_attendance_entry", "menu_onboarding",
     "grp_production", "grp_jute", "menu_jute_received", "menu_assorting_entry",
+    "menu_jute_mukam_received",
     "menu_drawing_meter_entry", "menu_spinning_doff_entry",
     "menu_winding_entry", "menu_weight_entry",
 )
@@ -234,6 +237,56 @@ def _seed_menu_tree(cursor, nodes, parent_id):
         else:
             key, name, order, icon, activity, is_group = node
             _insert_menu(cursor, key, name, parent_id, order, icon, activity, is_group)
+
+
+def _backfill_menu(cursor, db, key, name, parent_key, order, icon,
+                   activity_class, view_roles=()):
+    """
+    Idempotently ensure a single leaf menu exists and is granted to roles.
+    No-op if the menu_key is already present. Used for menus added after the
+    initial one-shot seed (which only runs on an empty `menus` table).
+    """
+    cursor.execute("SELECT id FROM menus WHERE menu_key = %s", (key,))
+    if cursor.fetchone() is not None:
+        return  # already present
+
+    cursor.execute("SELECT id FROM menus WHERE menu_key = %s", (parent_key,))
+    row = cursor.fetchone()
+    if row is None:
+        print(f"   [WARN] backfill: parent '{parent_key}' not found for '{key}'")
+        return
+    parent_id = row[0]
+
+    menu_id = _insert_menu(cursor, key, name, parent_id, order, icon, activity_class, 0)
+
+    # Admin -> can_all; Manager -> all but delete; named view_roles -> view+add.
+    cursor.execute(
+        """
+        INSERT INTO role_menu_permissions
+            (role_id, menu_id, can_view, can_add, can_modify, can_delete, can_print, can_all)
+        SELECT r.id, %s, 1, 1, 1, 1, 1, 1 FROM roles r WHERE r.role_name = 'Admin'
+        """,
+        (menu_id,),
+    )
+    cursor.execute(
+        """
+        INSERT INTO role_menu_permissions
+            (role_id, menu_id, can_view, can_add, can_modify, can_delete, can_print, can_all)
+        SELECT r.id, %s, 1, 1, 1, 0, 1, 0 FROM roles r WHERE r.role_name = 'Manager'
+        """,
+        (menu_id,),
+    )
+    for role_name in view_roles:
+        cursor.execute(
+            """
+            INSERT INTO role_menu_permissions
+                (role_id, menu_id, can_view, can_add, can_modify, can_delete, can_print, can_all)
+            SELECT r.id, %s, 1, 1, 0, 0, 0, 0 FROM roles r WHERE r.role_name = %s
+            """,
+            (menu_id, role_name),
+        )
+    db.commit()
+    print(f"   [OK] Backfilled menu '{key}' (menu_id={menu_id}) under '{parent_key}'")
 
 
 def init_permissions_db():
@@ -331,6 +384,20 @@ def init_permissions_db():
             )
             db.commit()
             print("   [OK] Seeded menus and default role permissions")
+
+        # ---- Backfill newly-added menus (idempotent) --------------------
+        # Menus seeded only when the table was empty; new leaves added after
+        # the first init must be inserted here so existing DBs pick them up.
+        _backfill_menu(
+            cursor, db,
+            key="menu_jute_mukam_received",
+            name="Jute Mukam Received",
+            parent_key="grp_jute",
+            order=3, icon="ic_add",
+            activity_class="JuteMukamReceivedActivity",
+            # Roles (besides Admin/Manager who get every menu) that may view it.
+            view_roles=("Supervisor", "Operator"),
+        )
 
         # ---- Assign user_mst.user_id = 1 to Admin -----------------------
         cursor.execute(

@@ -22,6 +22,7 @@ from src.spreader import spreader_bp
 from src.otherentries import otherentries_bp
 from src.assorting import assorting_bp
 from src.jute_received import jute_received_bp
+from src.jute_mukam_recvd import jute_mukam_recvd_bp
 from src.balesproduction import balesproduction_bp
 from src.permissions import permissions_bp
 
@@ -72,6 +73,7 @@ def create_app(config_object=None):
 	app.register_blueprint(otherentries_bp)
 	app.register_blueprint(assorting_bp)
 	app.register_blueprint(jute_received_bp)
+	app.register_blueprint(jute_mukam_recvd_bp)
 	app.register_blueprint(balesproduction_bp)
 	app.register_blueprint(permissions_bp)
 
