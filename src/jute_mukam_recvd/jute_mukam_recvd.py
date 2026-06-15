@@ -109,35 +109,42 @@ def _row_payload(data, updated_by):
 
 @jute_mukam_recvd_bp.route('/setup', methods=['GET'])
 def jute_mukam_recvd_setup():
-    """Dropdown data: parties (for the company), mukams, qualities, recvd list."""
+    """Dropdown data: parties (for the company), mukams, qualities, recvd list.
+
+    Accepts either co_id or branch_id — co_id is derived from branch_mst when
+    only branch_id is given (entry screens reliably carry the branch).
+    """
     try:
         co_id = request.args.get('co_id', type=int)
-        if not co_id:
-            return jsonify({'status': 'error', 'message': 'co_id is required'}), 400
+        branch_id = request.args.get('branch_id', type=int)
 
         _ensure_table()
         db = get_db()
         cursor = db.cursor(dictionary=True)
 
-        # Parties mapped to this company; fall back to all active parties if the
-        # supplier→party map has no rows for the company (keeps the screen usable).
+        if not co_id and branch_id:
+            cursor.execute("SELECT co_id FROM branch_mst WHERE branch_id = %s", (branch_id,))
+            row = cursor.fetchone()
+            if row:
+                co_id = row.get('co_id')
+        if not co_id:
+            cursor.close()
+            db.close()
+            return jsonify({'status': 'error', 'message': 'co_id or branch_id is required'}), 400
+
+        # All Jute Supplier parties for the company. party_type_id is stored as a
+        # set string like '{3}' (or '{1,3}'), where 3 = "Jute Supplier" in
+        # party_type_mst — match it with FIND_IN_SET after stripping the braces.
         cursor.execute("""
-            SELECT DISTINCT pm.party_id, pm.supp_name AS party_name
-            FROM jute_supp_party_map jspm
-            JOIN party_mst pm ON pm.party_id = jspm.party_id
-            WHERE jspm.co_id = %s AND (pm.active = 1 OR pm.active IS NULL)
+            SELECT pm.party_id, pm.supp_name AS party_name
+            FROM party_mst pm
+            WHERE (pm.co_id = %s OR pm.co_id IS NULL)
+              AND (pm.active = 1 OR pm.active IS NULL)
+              AND FIND_IN_SET('3',
+                    REPLACE(REPLACE(REPLACE(pm.party_type_id, '{', ''), '}', ''), ' ', '')) > 0
             ORDER BY pm.supp_name
         """, (co_id,))
         parties = cursor.fetchall()
-        if not parties:
-            cursor.execute("""
-                SELECT pm.party_id, pm.supp_name AS party_name
-                FROM party_mst pm
-                WHERE (pm.co_id = %s OR pm.co_id IS NULL)
-                  AND (pm.active = 1 OR pm.active IS NULL)
-                ORDER BY pm.supp_name
-            """, (co_id,))
-            parties = cursor.fetchall()
 
         cursor.execute("""
             SELECT mukam_id, mukam_name
