@@ -493,7 +493,7 @@ def hands_report():
         if branch_id:
             query += " AND branch_id = %s"
             params.append(branch_id)
-        query += " ORDER BY dept_desc, desig"
+        query += " ORDER BY dept_code, dept_desc, desig"
         cursor.execute(query, tuple(params))
         rows = cursor.fetchall()
         cursor.close()
