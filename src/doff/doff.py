@@ -1917,7 +1917,7 @@ def get_winding_entry2_employees():
                AND w.spg_wdg  = 'W'
                AND (w.active IS NULL OR w.active = 1)
              GROUP BY w.mc_eb_id, o.emp_code, emp_name
-             ORDER BY o.emp_code
+             ORDER BY  SUBSTR(COALESCE(p.first_name,''), 1, 7)
         """
         params = (d, spell_id, spell_id, branch_id)
         print('GET /doff/winding-entry-2-employees SQL:', sql)

@@ -19,7 +19,7 @@ from datetime import date, datetime, timedelta
 from fpdf import FPDF
 
 from db import get_db
-from src.send_email import send_document
+from src.send_email import send_document, fetch_hands, _hands_row_cells, _hands_add
 
 
 # -- data ---------------------------------------------------------------------
@@ -414,13 +414,69 @@ def _draw_drawing_table(pdf, title, rows):
     pdf.ln(row_h)
 
 
-def build_report_pdf(date_str, branch_name, jute, spinning, winding, out_path,
-                     finishing=None, drawing=None):
-    """Render the Jute + Spinning + Winding (+ Other Entries + Drawing) tables.
+def _draw_hands_table(pdf, title, rows):
+    """Draw the man-machine Hands report (Particulars x shift M/H + Hands), portrait.
 
-    jute / spinning / winding / finishing are each (rows, grand_total) tuples;
-    drawing is (rows, None). finishing and drawing are optional and drawn only
-    when they have rows.
+    rows = fetch_hands() output (dept_desc/dept_code/desig + thands_a/b/c, hands_a/b/c),
+    grouped by department with per-section subtotals and a grand total. Reuses the
+    cell/accumulator helpers from send_email so figures match the standalone PDF.
+    """
+    w_p, w_n = 52.0, 16.0   # 52 + 8*16 = 180mm (portrait usable)
+    row_h = 6.0
+
+    pdf.set_font('Helvetica', 'B', 12)
+    pdf.cell(w_p + 8 * w_n, row_h, title, border=1, align='C')
+    pdf.ln(row_h)
+
+    pdf.set_font('Helvetica', 'B', 8)
+    pdf.cell(w_p, row_h, 'Particulars', border=1, align='L')
+    for label in ('Shift A', 'Shift B', 'Shift C', 'Total'):
+        pdf.cell(2 * w_n, row_h, label, border=1, align='C')
+    pdf.ln(row_h)
+    pdf.cell(w_p, row_h, '', border=1)
+    for _ in range(4):
+        pdf.cell(w_n, row_h, 'M/H', border=1, align='C')
+        pdf.cell(w_n, row_h, 'Hands', border=1, align='C')
+    pdf.ln(row_h)
+
+    def numeric_row(label, cells, bold=False):
+        pdf.set_font('Helvetica', 'B' if bold else '', 7)
+        pdf.cell(w_p, row_h, label, border=1, align='L')
+        for c in cells:
+            pdf.cell(w_n, row_h, c, border=1, align='R')
+        pdf.ln(row_h)
+
+    grand, sub = {}, {}
+    cur_dept, sub_label = None, ''
+
+    def flush_sub():
+        if cur_dept is not None:
+            numeric_row('  Sub Total - %s' % sub_label, _hands_row_cells(sub), bold=True)
+
+    for r in rows:
+        dept = (r.get('dept_code'), r.get('dept_desc'))
+        if dept != cur_dept:
+            flush_sub()
+            cur_dept = dept
+            sub = {}
+            sub_label = (r.get('dept_desc') or '').strip()
+            pdf.set_font('Helvetica', 'B', 8)
+            pdf.cell(w_p + 8 * w_n, row_h, sub_label or 'Others', border=1, align='L')
+            pdf.ln(row_h)
+        numeric_row('   %s' % (r.get('desig') or ''), _hands_row_cells(r))
+        _hands_add(sub, r); _hands_add(grand, r)
+
+    flush_sub()
+    numeric_row('Total as per above', _hands_row_cells(grand), bold=True)
+
+
+def build_report_pdf(date_str, branch_name, jute, spinning, winding, out_path,
+                     finishing=None, drawing=None, hands=None):
+    """Render Jute + Spinning + Winding + Hands + Drawing (+ Other Entries) tables.
+
+    jute / spinning / winding / finishing are (rows, grand_total) tuples; drawing is
+    (rows, None); hands is the fetch_hands() row list. hands, drawing and finishing
+    are optional and drawn only when they have rows.
     """
     suffix = ('  -  %s' % branch_name) if branch_name else ''
     pdf = FPDF(orientation='P', unit='mm', format='A4')
@@ -443,17 +499,21 @@ def build_report_pdf(date_str, branch_name, jute, spinning, winding, out_path,
     _draw_table(pdf, 'Winding Production report Dated %s%s' % (date_str, suffix),
                 wd_rows, wd_gt)
 
-    if finishing and finishing[0]:
+    if hands:
         pdf.ln(6)
-        fn_rows, fn_gt = finishing
-        _draw_table(pdf, 'Other Entries Dated %s' % date_str,
-                    fn_rows, fn_gt, first_col='Particulars')
+        _draw_hands_table(pdf, 'Hands Report Dated %s%s' % (date_str, suffix), hands)
 
     if drawing and drawing[0]:
         pdf.ln(6)
         dr_rows, _ = drawing
         _draw_drawing_table(pdf, 'Drawing Report Dated %s%s' % (date_str, suffix),
                             dr_rows)
+
+    if finishing and finishing[0]:
+        pdf.ln(6)
+        fn_rows, fn_gt = finishing
+        _draw_table(pdf, 'Other Entries Dated %s' % date_str,
+                    fn_rows, fn_gt, first_col='Particulars')
 
     # Preparing date-time footer.
     pdf.ln(4)
@@ -467,26 +527,25 @@ def build_report_pdf(date_str, branch_name, jute, spinning, winding, out_path,
 
 # -- send ---------------------------------------------------------------------
 
-def send_daily_spg_report(report_date):
+def send_daily_spg_report(report_date, recipients=None):
     """Build and email the Spinning Production Summary for report_date (a date).
 
-    One PDF per active branch, emailed to every msg_for='SR' recipient.
+    One PDF per active branch. recipients = explicit list of emails (used by the
+    per-recipient scheduler); None = every msg_for in ('OE','SR') recipient (manual run).
     """
     date_str = report_date.strftime('%Y-%m-%d')
     disp_date = report_date.strftime('%d-%m-%Y')
-    recipients = report_recipients()
-    if not recipients:
-        print('SPG report: no recipients (tbl_whatsapp_send msg_for=SR); skipping', date_str)
-        return
 
-    # Distinct, non-blank email addresses, preserving order.
-    emails = []
-    for r in recipients:
-        email = (r.get('email_id') or '').strip()
-        if email and email not in emails:
-            emails.append(email)
+    if recipients is not None:
+        emails = [e for e in recipients if e]
+    else:
+        emails = []
+        for r in report_recipients():
+            email = (r.get('email_id') or '').strip()
+            if email and email not in emails:
+                emails.append(email)
     if not emails:
-        print('SPG report: recipients have no valid email_id; skipping', date_str)
+        print('SPG report: no recipients; skipping', date_str)
         return
 
     # Other Entries (tbl_daily_finishing) has no branch column: fetch once,
@@ -503,10 +562,11 @@ def send_daily_spg_report(report_date):
             sp_rows, sp_gt = fetch_spg_quality_shift(date_str, branch_id)
             wd_rows, wd_gt = fetch_winding_quality_shift(date_str, branch_id)
             dr_rows, _     = fetch_drawing_summary(date_str, branch_id)
+            hd_rows        = fetch_hands(date_str, branch_id)
         except Exception as ex:
             print('SPG report: data fetch failed for branch', branch_id, ex)
             continue
-        if not jt_rows and not sp_rows and not wd_rows and not fn_rows and not dr_rows:
+        if not jt_rows and not sp_rows and not wd_rows and not fn_rows and not dr_rows and not hd_rows:
             print('SPG report: no data for branch', branch_id, 'on', date_str, '- skipping')
             continue
 
@@ -516,7 +576,7 @@ def send_daily_spg_report(report_date):
             build_report_pdf(disp_date, branch_name,
                              (jt_rows, jt_gt), (sp_rows, sp_gt), (wd_rows, wd_gt),
                              out_path, finishing=(fn_rows, fn_gt),
-                             drawing=(dr_rows, None))
+                             drawing=(dr_rows, None), hands=hd_rows)
         except Exception as ex:
             print('SPG report: PDF build failed for branch', branch_id, ex)
             continue
@@ -539,56 +599,151 @@ def send_daily_spg_report(report_date):
 
 _scheduler = None
 
-def _run_today():
-    send_daily_spg_report(date.today())
 
-def _run_yesterday():
-    send_daily_spg_report(date.today() - timedelta(days=1))
+def _parse_hhmm(part):
+    """Parse a single 'HH:MM' into (hour, minute), or None if invalid."""
+    part = part.strip()
+    if not part:
+        return None
+    try:
+        hh, _, mm = part.partition(':')
+        hour, minute = int(hh), int(mm or 0)
+        if 0 <= hour <= 23 and 0 <= minute <= 59:
+            return (hour, minute)
+        print('report schedule: ignoring out-of-range time %r' % part)
+    except ValueError:
+        print('report schedule: ignoring invalid time %r' % part)
+    return None
 
 
-def _parse_times(value, default):
-    """Parse 'HH:MM,HH:MM,...' into [(hour, minute), ...]; fall back to default."""
-    times = []
-    for part in (value or default).split(','):
+def _split_times(s):
+    """Parse one sch_times string into (today_times, prevday_times) lists of
+    (hour, minute). A time with a trailing 'P' (e.g. '07:00P') is a previous-day run."""
+    today, prev = [], []
+    for part in str(s or '').split(','):
         part = part.strip()
         if not part:
             continue
+        is_prev = part[-1:].upper() == 'P'
+        hm = _parse_hhmm(part[:-1] if is_prev else part)
+        if hm is None:
+            continue
+        (prev if is_prev else today).append(hm)
+    return today, prev
+
+
+def scheduled_times(msg_for):
+    """Union of every matching row's sch_times for a msg_for code (or list).
+
+    Returns (today_times, prevday_times), each a sorted, de-duped list of
+    (hour, minute). Mainly a diagnostic / overview helper; live per-recipient
+    scheduling uses due_recipients().
+    """
+    codes = [c for c in (msg_for if isinstance(msg_for, (list, tuple)) else [msg_for]) if c]
+    if not codes:
+        return [], []
+    try:
+        db = get_db()
+        cur = db.cursor()
+        ph = ','.join(['%s'] * len(codes))
+        cur.execute("SELECT sch_times FROM tbl_whatsapp_send "
+                    "WHERE msg_for IN (%s) AND sch_times IS NOT NULL AND sch_times <> ''" % ph,
+                    tuple(codes))
+        raw = [r[0] for r in cur.fetchall()]
+        cur.close(); db.close()
+    except Exception as ex:
+        print('report schedule: sch_times lookup failed:', ex)
+        return [], []
+    today, prev = [], []
+    for s in raw:
+        t, p = _split_times(s)
+        today += [x for x in t if x not in today]
+        prev += [x for x in p if x not in prev]
+    today.sort(); prev.sort()
+    return today, prev
+
+
+def due_recipients(msg_for):
+    """Recipients due at the CURRENT minute, per row (per-recipient scheduling).
+
+    Each tbl_whatsapp_send row carries its own sch_times, so the same report
+    (msg_for) can reach different people at different times. Returns
+    (today_emails, prevday_emails) for the current HH:MM. email_id may hold several
+    comma-separated addresses; msg_for is a code or list of codes.
+    """
+    codes = [c for c in (msg_for if isinstance(msg_for, (list, tuple)) else [msg_for]) if c]
+    if not codes:
+        return [], []
+    try:
+        db = get_db()
+        cur = db.cursor()
+        ph = ','.join(['%s'] * len(codes))
+        cur.execute("SELECT email_id, sch_times FROM tbl_whatsapp_send "
+                    "WHERE msg_for IN (%s) AND email_id IS NOT NULL AND email_id <> '' "
+                    "AND sch_times IS NOT NULL AND sch_times <> ''" % ph, tuple(codes))
+        rows = cur.fetchall()
+        cur.close(); db.close()
+    except Exception as ex:
+        print('report schedule: due_recipients lookup failed:', ex)
+        return [], []
+    now = datetime.now()
+    hm = (now.hour, now.minute)
+    today, prev = [], []
+    for email_id, sch in rows:
+        t_times, p_times = _split_times(sch)
+        addrs = [a.strip() for a in str(email_id).split(',') if a.strip()]
+        if hm in t_times:
+            today += [a for a in addrs if a not in today]
+        if hm in p_times:
+            prev += [a for a in addrs if a not in prev]
+    return today, prev
+
+
+def _report_tick(label, msg_for, send_fn):
+    """Per-minute tick: send the report to whichever recipients are due this minute.
+
+    Reads tbl_whatsapp_send live (per-row sch_times), so schedule/recipient edits
+    apply within a minute, no restart. send_fn(report_date, emails) does the send;
+    'P'-suffixed times send the previous day's report.
+    """
+    today_emails, prev_emails = due_recipients(msg_for)
+    if today_emails:
+        print('%s: sending (current day) to %d recipient(s)' % (label, len(today_emails)))
         try:
-            hh, _, mm = part.partition(':')
-            hour, minute = int(hh), int(mm or 0)
-            if 0 <= hour <= 23 and 0 <= minute <= 59:
-                times.append((hour, minute))
-            else:
-                print('SPG report: ignoring out-of-range time %r' % part)
-        except ValueError:
-            print('SPG report: ignoring invalid time %r' % part)
-    return times or _parse_times(default, default)
+            send_fn(date.today(), today_emails)
+        except Exception as ex:
+            print('%s: run failed:' % label, ex)
+    if prev_emails:
+        print('%s: sending (previous day) to %d recipient(s)' % (label, len(prev_emails)))
+        try:
+            send_fn(date.today() - timedelta(days=1), prev_emails)
+        except Exception as ex:
+            print('%s: run failed:' % label, ex)
+
+
+def start_report_scheduler(label, msg_for, send_fn, id_prefix):
+    """Start a per-minute, table-driven scheduler for one daily report.
+
+    A single cron job ticks every minute and re-reads tbl_whatsapp_send (msg_for):
+    each recipient row fires at its own sch_times, so the same report can reach
+    different recipients at different times. send_fn(report_date, emails) sends to the
+    due recipients. Edits apply within a minute, no restart. Caller owns idempotency.
+    """
+    from apscheduler.schedulers.background import BackgroundScheduler
+    sched = BackgroundScheduler(daemon=True)
+    sched.add_job(lambda: _report_tick(label, msg_for, send_fn),
+                  'cron', minute='*', id='%s_tick' % id_prefix,
+                  replace_existing=True, max_instances=1, misfire_grace_time=55)
+    sched.start()
+    print('%s scheduler started (per-recipient, table-driven, msg_for=%s)' % (label, msg_for))
+    return sched
 
 
 def start_scheduler():
-    """Start the background scheduler. Times are server local time.
-
-    Configure via .env (comma-separated HH:MM, 24-hour):
-      SPG_REPORT_TIMES         -> report for the CURRENT date  (default 15:00,23:00)
-      SPG_REPORT_TIMES_PREVDAY -> report for the PREVIOUS date (default 07:00)
-    Idempotent within a process.
-    """
+    """Start the SPG report scheduler (per-recipient sch_times, msg_for in OE/SR).
+    Idempotent within a process."""
     global _scheduler
     if _scheduler is not None:
         return _scheduler
-    from apscheduler.schedulers.background import BackgroundScheduler
-    today_times = _parse_times(os.getenv('SPG_REPORT_TIMES'), '15:00,23:00')
-    prev_times  = _parse_times(os.getenv('SPG_REPORT_TIMES_PREVDAY'), '07:00')
-    sched = BackgroundScheduler(daemon=True)
-    for hour, minute in today_times:
-        sched.add_job(_run_today, 'cron', hour=hour, minute=minute,
-                      id='spg_today_%02d%02d' % (hour, minute), replace_existing=True)
-    for hour, minute in prev_times:
-        sched.add_job(_run_yesterday, 'cron', hour=hour, minute=minute,
-                      id='spg_prev_%02d%02d' % (hour, minute), replace_existing=True)
-    sched.start()
-    _scheduler = sched
-    print('SPG report scheduler started: %s (today), %s (yesterday)' % (
-        ', '.join('%02d:%02d' % t for t in today_times),
-        ', '.join('%02d:%02d' % t for t in prev_times)))
-    return sched
+    _scheduler = start_report_scheduler('SPG report', ('OE', 'SR'), send_daily_spg_report, 'spg')
+    return _scheduler

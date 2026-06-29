@@ -23,5 +23,43 @@ if __name__ == '__main__':
         except Exception as ex:
             print('SPG report scheduler not started:', ex)
 
+    # Daily Hands Report (man vs machine) email. Same guard as the SPG report;
+    # toggle with HANDS_REPORT_SCHEDULER=0.
+    if os.getenv('HANDS_REPORT_SCHEDULER', '1') == '1' and (
+            not debug or os.getenv('WERKZEUG_RUN_MAIN') == 'true'):
+        try:
+            from src.send_email import start_hands_scheduler
+            start_hands_scheduler()
+        except Exception as ex:
+            print('Hands report scheduler not started:', ex)
+
+    # Daily Drawing Efficiency Report email. Same guard; toggle with
+    # DRAWING_REPORT_SCHEDULER=0.
+    if os.getenv('DRAWING_REPORT_SCHEDULER', '1') == '1' and (
+            not debug or os.getenv('WERKZEUG_RUN_MAIN') == 'true'):
+        try:
+            from src.send_email import start_drawing_scheduler
+            start_drawing_scheduler()
+        except Exception as ex:
+            print('Drawing report scheduler not started:', ex)
+
+    # Daily MIS Report email. Same guard; toggle with MIS_REPORT_SCHEDULER=0.
+    if os.getenv('MIS_REPORT_SCHEDULER', '1') == '1' and (
+            not debug or os.getenv('WERKZEUG_RUN_MAIN') == 'true'):
+        try:
+            from src.mis_report import start_mis_scheduler
+            start_mis_scheduler()
+        except Exception as ex:
+            print('MIS report scheduler not started:', ex)
+
+    # Daily Summary Report (MIS01) email. Same guard; toggle with DSR_REPORT_SCHEDULER=0.
+    if os.getenv('DSR_REPORT_SCHEDULER', '1') == '1' and (
+            not debug or os.getenv('WERKZEUG_RUN_MAIN') == 'true'):
+        try:
+            from src.daily_summary_report import start_dsr_scheduler
+            start_dsr_scheduler()
+        except Exception as ex:
+            print('DSR report scheduler not started:', ex)
+
     print(f'Server ready at http://0.0.0.0:{port}')
     app.run(host='0.0.0.0', port=port, debug=debug)

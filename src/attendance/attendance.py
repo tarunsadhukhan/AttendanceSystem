@@ -677,6 +677,78 @@ def emp_wise_attendance():
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 
+def _mirror_attendance_mod(cursor, atten_id, user_id=None):
+    """Mirror the (just-updated) daily_attendance row into daily_attendance_mod.
+
+    Upsert is keyed on (bio_id, attendance_date): if a row for the same employee
+    and date already exists it is updated, otherwise a new row is inserted.
+    Whatever columns the two tables share are copied verbatim, and audit columns
+    (modified_by / modified_date_time and the updated_* variants) are filled when
+    present.
+
+    The table is introspected at runtime so this stays correct without hardcoding
+    the daily_attendance_mod column list. Runs inside the caller's transaction.
+    """
+    # 1) Full source row (all columns, incl. bio_id when present)
+    cursor.execute("SELECT * FROM daily_attendance WHERE daily_atten_id = %s", (atten_id,))
+    src = cursor.fetchone()
+    if not src:
+        return
+
+    # 2) Columns that actually exist on daily_attendance_mod
+    cursor.execute(
+        "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS "
+        "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'daily_attendance_mod'"
+    )
+    mod_cols = {r['COLUMN_NAME'] for r in cursor.fetchall()}
+    if not mod_cols:
+        print('[ATT-MOD] daily_attendance_mod not found / has no columns - skipped')
+        return
+    # Both halves of the dedup key must exist on both tables
+    key_cols = ('bio_id', 'attendance_date')
+    missing = [k for k in key_cols if k not in mod_cols or k not in src]
+    if missing:
+        print(f'[ATT-MOD] key column(s) {missing} missing on daily_attendance_mod or '
+              'daily_attendance - cannot upsert, skipped')
+        return
+
+    # 3) Copy the columns shared by both tables
+    values = {c: src[c] for c in src.keys() if c in mod_cols}
+
+    # 4) Audit columns (only those the mod table actually has)
+    now = datetime.now()
+    for col in ('modified_by', 'updated_by'):
+        if col in mod_cols and user_id is not None:
+            values[col] = user_id
+    for col in ('modified_date_time', 'updated_date_time', 'modified_date', 'updated_date'):
+        if col in mod_cols:
+            values[col] = now
+
+    key_vals = [values[k] for k in key_cols]
+    where_clause = " AND ".join(f"`{k}` = %s" for k in key_cols)
+
+    # 5) Upsert keyed on (bio_id, attendance_date)
+    cursor.execute(
+        f"SELECT 1 FROM daily_attendance_mod WHERE {where_clause} LIMIT 1", key_vals)
+    if cursor.fetchone() is not None:
+        set_cols = [c for c in values.keys() if c not in key_cols]
+        set_clause = ", ".join(f"`{c}` = %s" for c in set_cols)
+        params = [values[c] for c in set_cols] + key_vals
+        cursor.execute(
+            f"UPDATE daily_attendance_mod SET {set_clause} WHERE {where_clause}", params)
+        print(f'[ATT-MOD] updated mod row bio_id={values["bio_id"]} '
+              f'date={values["attendance_date"]} (atten_id={atten_id})')
+    else:
+        cols = list(values.keys())
+        col_clause = ", ".join(f"`{c}`" for c in cols)
+        placeholders = ", ".join(["%s"] * len(cols))
+        params = [values[c] for c in cols]
+        cursor.execute(
+            f"INSERT INTO daily_attendance_mod ({col_clause}) VALUES ({placeholders})", params)
+        print(f'[ATT-MOD] inserted mod row bio_id={values["bio_id"]} '
+              f'date={values["attendance_date"]} (atten_id={atten_id})')
+
+
 @attendance_bp.route('/attendance/<int:atten_id>', methods=['PUT'])
 def update_attendance(atten_id):
     try:
@@ -687,6 +759,7 @@ def update_attendance(atten_id):
         working_hours   = data.get('working_hours', 0) or 0
         idle_hours      = data.get('idle_hours', 0) or 0
         machine_ids     = data.get('machine_ids') or []
+        user_id         = data.get('user_id') or data.get('updated_by')
         db     = get_db()
         cursor = db.cursor(dictionary=True)
         # Fetch eb_id (needed to insert into daily_ebmc_attendance)
@@ -714,6 +787,9 @@ def update_attendance(atten_id):
                     continue
                 cursor.execute(Q.INSERT_MACHINE_ATTENDANCE,
                                (atten_id, eb_id, mc_id_int))
+        # 4) Mirror the updated attendance row into daily_attendance_mod
+        #    (upsert keyed on bio_id), part of the same transaction.
+        _mirror_attendance_mod(cursor, atten_id, user_id)
         db.commit()
         cursor.close()
         db.close()

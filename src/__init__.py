@@ -51,6 +51,54 @@ def create_app(config_object=None):
 		send_daily_spg_report(report_date)
 		return jsonify({'status': 'success', 'date': report_date.isoformat()})
 
+	@app.route('/run-hands-report', methods=['POST'])
+	def run_hands_report():
+		from datetime import date, datetime
+		from src.send_email import send_daily_hands_report
+		d = request.args.get('date')
+		try:
+			report_date = datetime.strptime(d, '%Y-%m-%d').date() if d else date.today()
+		except ValueError:
+			return jsonify({'status': 'error', 'message': 'date must be YYYY-MM-DD'}), 400
+		send_daily_hands_report(report_date)
+		return jsonify({'status': 'success', 'date': report_date.isoformat()})
+
+	@app.route('/run-drawing-report', methods=['POST'])
+	def run_drawing_report():
+		from datetime import date, datetime
+		from src.send_email import send_daily_drawing_report
+		d = request.args.get('date')
+		try:
+			report_date = datetime.strptime(d, '%Y-%m-%d').date() if d else date.today()
+		except ValueError:
+			return jsonify({'status': 'error', 'message': 'date must be YYYY-MM-DD'}), 400
+		send_daily_drawing_report(report_date)
+		return jsonify({'status': 'success', 'date': report_date.isoformat()})
+
+	@app.route('/run-mis-report', methods=['POST'])
+	def run_mis_report():
+		from datetime import date, datetime
+		from src.mis_report import send_daily_mis_report
+		d = request.args.get('date')
+		try:
+			report_date = datetime.strptime(d, '%Y-%m-%d').date() if d else date.today()
+		except ValueError:
+			return jsonify({'status': 'error', 'message': 'date must be YYYY-MM-DD'}), 400
+		send_daily_mis_report(report_date)
+		return jsonify({'status': 'success', 'date': report_date.isoformat()})
+
+	@app.route('/run-daily-summary-report', methods=['POST'])
+	def run_daily_summary_report():
+		from datetime import date, datetime
+		from src.daily_summary_report import send_daily_summary_report
+		d = request.args.get('date')
+		try:
+			report_date = datetime.strptime(d, '%Y-%m-%d').date() if d else date.today()
+		except ValueError:
+			return jsonify({'status': 'error', 'message': 'date must be YYYY-MM-DD'}), 400
+		send_daily_summary_report(report_date)
+		return jsonify({'status': 'success', 'date': report_date.isoformat()})
+
 	app.register_blueprint(auth_bp)
 	app.register_blueprint(attendance_bp)
 	app.register_blueprint(dashboard_bp)
