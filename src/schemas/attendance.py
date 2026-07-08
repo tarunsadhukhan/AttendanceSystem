@@ -5,14 +5,14 @@ class MarkAttendanceSchema(Schema):
     required = ['image']
     optional = ['att_type', 'attendance_type', 'attendance_date',
                 'department_id', 'designation_id', 'shift_id',
-                'shift_hours', 'working_hours', 'idle_hours']
+                'shift_hours', 'working_hours', 'idle_hours', 'shed_type']
 
 
 class ManualAttendanceSchema(Schema):
     required = ['emp_code']
     optional = ['att_type', 'attendance_type', 'attendance_date', 'branch_id',
                 'department_id', 'designation_id', 'shift_id',
-                'shift_hours', 'working_hours', 'idle_hours']
+                'shift_hours', 'working_hours', 'idle_hours', 'shed_type']
 
 
 class CheckFaceSchema(Schema):

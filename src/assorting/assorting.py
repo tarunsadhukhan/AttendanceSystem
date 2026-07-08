@@ -352,28 +352,21 @@ def list_assorting_entries():
 
 
 # ─── Assorting Report (production by selector / machine-type / quality) ────────
-@assorting_bp.route('/report', methods=['GET'])
-def assorting_report():
-    """Three production reports for a date+branch, each with a grand total:
-       1) by selector, 2) by machine type, 3) by jute quality.
-    """
+
+def _assorting_report_sections(date_str, branch_id):
+    """Return (by_selector, by_machine_type, by_quality) production sections,
+    each {rows: [{name, production}], grand_total}. Shared by the JSON and
+    .xlsx endpoints so they can never drift."""
+    db = get_db()
+    cur = db.cursor(dictionary=True)
+
+    def rows(sql):
+        cur.execute(sql, (date_str, branch_id))
+        out = [{'name': (r['name'] or ''), 'production': float(r['production'] or 0)}
+               for r in cur.fetchall()]
+        return {'rows': out, 'grand_total': round(sum(x['production'] for x in out), 3)}
+
     try:
-        _ensure_assorting_table()
-        date_str  = request.args.get('date')
-        branch_id = request.args.get('branch_id', type=int)
-        if not all([date_str, branch_id]):
-            return jsonify({'status': 'error',
-                            'message': 'date and branch_id are required'}), 400
-
-        db = get_db()
-        cur = db.cursor(dictionary=True)
-
-        def rows(sql):
-            cur.execute(sql, (date_str, branch_id))
-            out = [{'name': (r['name'] or ''), 'production': float(r['production'] or 0)}
-                   for r in cur.fetchall()]
-            return {'rows': out, 'grand_total': round(sum(x['production'] for x in out), 3)}
-
         # 1) Selector wise
         by_selector = rows("""
             SELECT COALESCE(tsm.selector_name, '') AS name, SUM(ae.net_wt) AS production
@@ -405,14 +398,111 @@ def assorting_report():
             GROUP BY jqm.shr_name
             ORDER BY production DESC
         """)
-
+        return by_selector, by_machine_type, by_quality
+    finally:
         cur.close(); db.close()
+
+
+def _build_assorting_xlsx(sections, date_str):
+    """Build the Assorting report workbook: three Name|Production blocks
+    (Selector / Machine Type / Quality), each with a Total -> BytesIO."""
+    import io
+    import openpyxl
+    from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+
+    def z(v):
+        v = round(float(v or 0), 3)
+        return None if v == 0 else (int(v) if v == int(v) else v)
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Assorting"
+    thin = Side(style='thin', color='999999')
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    hdr_fill = PatternFill('solid', fgColor='1565C0')
+    hdr_font = Font(bold=True, color='FFFFFF')
+    sec_fill = PatternFill('solid', fgColor='BBDEFB')
+    tot_fill = PatternFill('solid', fgColor='E3F2FD')
+    center = Alignment(horizontal='center', vertical='center')
+    left = Alignment(horizontal='left', vertical='center')
+
+    ws.cell(1, 1, f"Assorting Report - Date: {date_str}").font = Font(bold=True)
+    ws.merge_cells('A1:B1')
+    ws.cell(1, 1).alignment = center
+
+    r = 3
+    for title, sec in zip(('Selector wise', 'Machine Type wise', 'Quality wise'), sections):
+        for c in (1, 2):
+            ws.cell(r, c).fill = sec_fill; ws.cell(r, c).border = border
+        sh = ws.cell(r, 1, title); sh.font = Font(bold=True); sh.alignment = left
+        r += 1
+        for c, h in enumerate(('Particular', 'Production'), start=1):
+            cell = ws.cell(r, c, h)
+            cell.fill = hdr_fill; cell.font = hdr_font
+            cell.alignment = center; cell.border = border
+        r += 1
+        for row in sec['rows']:
+            a = ws.cell(r, 1, row['name']); a.alignment = left; a.border = border
+            b = ws.cell(r, 2, z(row['production'])); b.alignment = center; b.border = border
+            r += 1
+        ta = ws.cell(r, 1, 'Total'); ta.font = Font(bold=True); ta.fill = tot_fill
+        ta.alignment = left; ta.border = border
+        tb = ws.cell(r, 2, z(sec['grand_total'])); tb.font = Font(bold=True)
+        tb.fill = tot_fill; tb.alignment = center; tb.border = border
+        r += 2   # blank gap between sections
+
+    ws.column_dimensions['A'].width = 40
+    ws.column_dimensions['B'].width = 16
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf
+
+
+@assorting_bp.route('/report', methods=['GET'])
+def assorting_report():
+    """Three production reports for a date+branch, each with a grand total:
+       1) by selector, 2) by machine type, 3) by jute quality.
+    """
+    try:
+        _ensure_assorting_table()
+        date_str  = request.args.get('date')
+        branch_id = request.args.get('branch_id', type=int)
+        if not all([date_str, branch_id]):
+            return jsonify({'status': 'error',
+                            'message': 'date and branch_id are required'}), 400
+
+        by_selector, by_machine_type, by_quality = _assorting_report_sections(date_str, branch_id)
         return jsonify({
             'status':          'success',
             'by_selector':     by_selector,
             'by_machine_type': by_machine_type,
             'by_quality':      by_quality,
         })
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+@assorting_bp.route('/report.xlsx', methods=['GET'])
+def assorting_report_xlsx():
+    """Assorting report as a downloadable .xlsx (3 sections in one sheet)."""
+    try:
+        from flask import send_file
+        _ensure_assorting_table()
+        date_str  = request.args.get('date')
+        branch_id = request.args.get('branch_id', type=int)
+        if not all([date_str, branch_id]):
+            return jsonify({'status': 'error',
+                            'message': 'date and branch_id are required'}), 400
+
+        sections = _assorting_report_sections(date_str, branch_id)
+        buf = _build_assorting_xlsx(sections, date_str)
+        return send_file(
+            buf,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            as_attachment=True,
+            download_name=f"AssortingReport_{date_str}.xlsx",
+        )
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 

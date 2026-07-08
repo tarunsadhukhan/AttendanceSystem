@@ -4,8 +4,8 @@ INSERT_ATTENDANCE = """
        attendance_source, attendance_type,
        attendance_mark, is_active, branch_id,
        spell, spell_hours, worked_department_id, worked_designation_id,
-       status_id, working_hours, idle_hours)
-    VALUES (%s, %s, %s, %s, %s, 1, %s, %s, %s, %s, %s, '3', %s, %s  )
+       status_id, working_hours, idle_hours, shed_type)
+    VALUES (%s, %s, %s, %s, %s, 1, %s, %s, %s, %s, %s, '3', %s, %s, %s)
 """
 print('ins att',INSERT_ATTENDANCE )
 INSERT_MACHINE_ATTENDANCE = """
@@ -22,7 +22,8 @@ UPDATE_ATTENDANCE = """
            worked_department_id  = %s,
            worked_designation_id = %s,
            working_hours         = %s,
-           idle_hours            = %s
+           idle_hours            = %s,
+           shed_type             = COALESCE(%s, shed_type)
      WHERE daily_atten_id = %s
 """
 
@@ -84,6 +85,7 @@ GET_ATTENDANCE_REPORT_BASE = """
         COALESCE(da.spell_hours,   0) AS shift_hours,
            COALESCE(da.working_hours, 0) AS working_hours,
            COALESCE(da.idle_hours,    0) AS idle_hours,
+           COALESCE(da.shed_type, 'Old Shed') AS shed_type,
         IF(EXISTS(
           SELECT 1
           FROM employee_face_mst ef

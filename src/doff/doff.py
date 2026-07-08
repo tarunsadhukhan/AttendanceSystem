@@ -2616,6 +2616,119 @@ def get_spg1_quality_shift_report():
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 
+def _build_quality_shift_xlsx(rows, grand_total, title, date_str):
+    """Build a Quality x Shift A/B/C/Total workbook (+ grand total) -> BytesIO.
+
+    rows: [{quality_name, shift_a, shift_b, shift_c, total}], grand_total same
+    keys minus quality_name. Shared by the SPG1 and Winding-2 xlsx exports.
+    """
+    import io
+    import openpyxl
+    from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+    from openpyxl.utils import get_column_letter
+
+    def z(v):
+        v = round(float(v or 0), 2)
+        return None if v == 0 else (int(v) if v == int(v) else v)
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Report"
+    thin = Side(style='thin', color='999999')
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    hdr_fill = PatternFill('solid', fgColor='1565C0')
+    hdr_font = Font(bold=True, color='FFFFFF')
+    gtot_fill = PatternFill('solid', fgColor='1565C0')
+    center = Alignment(horizontal='center', vertical='center')
+    left = Alignment(horizontal='left', vertical='center')
+
+    ws.cell(1, 1, f"{title} - Date: {date_str}").font = Font(bold=True)
+    ws.merge_cells('A1:E1')
+    ws.cell(1, 1).alignment = center
+
+    for c, h in enumerate(('Quality', 'Shift A', 'Shift B', 'Shift C', 'Total'), start=1):
+        cell = ws.cell(2, c, h)
+        cell.fill = hdr_fill; cell.font = hdr_font
+        cell.alignment = center; cell.border = border
+
+    r = 3
+    for row in rows:
+        a = ws.cell(r, 1, row.get('quality_name') or '')
+        a.alignment = left; a.border = border
+        for c, key in enumerate(('shift_a', 'shift_b', 'shift_c', 'total'), start=2):
+            cell = ws.cell(r, c, z(row.get(key)))
+            cell.alignment = center; cell.border = border
+        r += 1
+
+    gt = grand_total or {}
+    tc = ws.cell(r, 1, 'Total')
+    tc.font = Font(bold=True, color='FFFFFF'); tc.fill = gtot_fill
+    tc.alignment = left; tc.border = border
+    for c, key in enumerate(('shift_a', 'shift_b', 'shift_c', 'total'), start=2):
+        cell = ws.cell(r, c, z(gt.get(key)))
+        cell.font = Font(bold=True, color='FFFFFF'); cell.fill = gtot_fill
+        cell.alignment = center; cell.border = border
+
+    ws.column_dimensions['A'].width = 40
+    for c in range(2, 6):
+        ws.column_dimensions[get_column_letter(c)].width = 14
+    ws.freeze_panes = 'A3'
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf
+
+
+@doff_bp.route('/doff/spg1-quality-shift-report.xlsx', methods=['GET'])
+def spg1_quality_shift_report_xlsx():
+    """SPG Doff (1) quality-shift report as a downloadable .xlsx."""
+    try:
+        from flask import send_file
+        date_str  = request.args.get('date')
+        branch_id = request.args.get('branch_id', type=int)
+        if not date_str:
+            return jsonify({'status': 'error', 'message': 'date is required'}), 400
+        if not branch_id:
+            return jsonify({'status': 'error', 'message': 'branch_id is required'}), 400
+        from src.spg_report import fetch_spg_quality_shift
+        rows, gt = fetch_spg_quality_shift(date_str, branch_id)
+        buf = _build_quality_shift_xlsx(
+            rows, gt, "SPG Doff (1) Quality-wise Shift-wise Report", date_str)
+        return send_file(
+            buf,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            as_attachment=True,
+            download_name=f"SPG1_QualityShift_{date_str}.xlsx",
+        )
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+@doff_bp.route('/doff/winding-entry-2-quality-shift-report.xlsx', methods=['GET'])
+def we2_quality_shift_report_xlsx():
+    """Winding Entry (2) quality-shift report as a downloadable .xlsx."""
+    try:
+        from flask import send_file
+        date_str  = request.args.get('date')
+        branch_id = request.args.get('branch_id', type=int)
+        if not date_str:
+            return jsonify({'status': 'error', 'message': 'date is required'}), 400
+        if not branch_id:
+            return jsonify({'status': 'error', 'message': 'branch_id is required'}), 400
+        from src.spg_report import fetch_winding_quality_shift
+        rows, gt = fetch_winding_quality_shift(date_str, branch_id)
+        buf = _build_quality_shift_xlsx(
+            rows, gt, "Winding (2) Quality-wise Shift-wise Report", date_str)
+        return send_file(
+            buf,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            as_attachment=True,
+            download_name=f"Winding2_QualityShift_{date_str}.xlsx",
+        )
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Spg Running Hours — table: tbl_daily_vvfd_transaction
 #   machines: machine_mst where machine_type_id = 36 and branch_id matches

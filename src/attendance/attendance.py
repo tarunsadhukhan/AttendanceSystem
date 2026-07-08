@@ -84,6 +84,7 @@ def mark_attendance():
         shift_hours    = data.get('shift_hours',   0)
         working_hours  = data.get('working_hours', 0)
         idle_hours     = data.get('idle_hours',    0)
+        shed_type      = data.get('shed_type') or 'Old Shed'
 
         # Get spell name from shift_id if provided
         spell_name = None
@@ -94,14 +95,14 @@ def mark_attendance():
 
         print(f"[ATT] eb_id={eb_id} emp_code={emp_code} att_type={att_type} "
               f"date={att_date} dept={department_id} shift={shift_id} desig={designation_id} "
-              f"hrs={shift_hours}/{working_hours}/{idle_hours}")
+              f"hrs={shift_hours}/{working_hours}/{idle_hours} shed={shed_type}")
 
         cursor.execute(Q.INSERT_ATTENDANCE,
                      (eb_id, att_date,
                     'Face', att_type,
                         'P', branch_id,
                         spell_name, shift_hours, department_id, designation_id,
-                        working_hours, idle_hours))
+                        working_hours, idle_hours, shed_type))
         
         # Get the inserted attendance ID
         attendance_id = cursor.lastrowid
@@ -185,6 +186,7 @@ def mark_attendance_manual():
 
         working_hours  = data.get('working_hours', 0)
         idle_hours     = data.get('idle_hours',    0)
+        shed_type      = data.get('shed_type') or 'Old Shed'
 
         # Get spell name from shift_id if provided
         spell_name = None
@@ -195,14 +197,14 @@ def mark_attendance_manual():
 
         print(f"[MANUAL-ATT] eb_id={eb_id} emp_code={emp_code} att_type={att_type} "
               f"date={att_date} dept={department_id} shift={shift_id} desig={designation_id} "
-              f"hrs={shift_hours}/{working_hours}/{idle_hours}")
+              f"hrs={shift_hours}/{working_hours}/{idle_hours} shed={shed_type}")
 
         cursor.execute(Q.INSERT_ATTENDANCE,
                      (eb_id, att_date,
                       'Manual', att_type,
                       'P', branch_id,
                       spell_name, shift_hours, department_id, designation_id,
-                      working_hours, idle_hours))
+                      working_hours, idle_hours, shed_type))
         
         # Get the inserted attendance ID
         attendance_id = cursor.lastrowid
@@ -381,6 +383,7 @@ def attendance_report():
                    COALESCE(da.spell_hours,   0) AS shift_hours,
                    COALESCE(da.working_hours, 0) AS working_hours,
                    COALESCE(da.idle_hours,    0) AS idle_hours,
+                   COALESCE(da.shed_type, 'Old Shed') AS shed_type,
                    IF(EXISTS(
                      SELECT 1
                      FROM employee_face_mst ef
@@ -597,7 +600,8 @@ def emp_wise_attendance():
         att_sql = """
             SELECT da.eb_id,
                    DATE_FORMAT(da.attendance_date, '%%Y-%%m-%%d') AS att_date,
-                   SUM(COALESCE(da.working_hours, 0)) AS total_hours
+                   SUM(COALESCE(da.working_hours, 0)) AS total_hours,
+                   GROUP_CONCAT(DISTINCT da.shed_type) AS sheds
             FROM daily_attendance da
             WHERE da.attendance_date BETWEEN %s AND %s
               AND da.is_active = 1
@@ -625,10 +629,13 @@ def emp_wise_attendance():
         cursor.close()
         db.close()
 
-        att_map = defaultdict(dict)
+        att_map  = defaultdict(dict)
+        shed_map = defaultdict(set)
         for r in att_rows:
             hrs = float(r['total_hours'] or 0)
             att_map[r['eb_id']][r['att_date']] = hrs
+            if r.get('sheds'):
+                shed_map[r['eb_id']].update(s for s in r['sheds'].split(',') if s)
 
         result_rows = []
         for emp in employees:
@@ -658,6 +665,7 @@ def emp_wise_attendance():
                 'dept':          emp['dept_name'],
                 'designation':   emp['desig_name'],
                 'attendance':    attendance,
+                'shed':          ', '.join(sorted(shed_map.get(eb_id, []))),
                 'total_hours':   round(total_hours, 1),
                 'total_present': days_present,
                 'total_absent':  len(periods) - days_present,
@@ -759,6 +767,7 @@ def update_attendance(atten_id):
         working_hours   = data.get('working_hours', 0) or 0
         idle_hours      = data.get('idle_hours', 0) or 0
         machine_ids     = data.get('machine_ids') or []
+        shed_type       = data.get('shed_type')  # None → keep existing value
         user_id         = data.get('user_id') or data.get('updated_by')
         db     = get_db()
         cursor = db.cursor(dictionary=True)
@@ -773,7 +782,7 @@ def update_attendance(atten_id):
         # 1) Update the attendance row
         cursor.execute(Q.UPDATE_ATTENDANCE,
                        (att_type, department_id, designation_id,
-                        working_hours, idle_hours, atten_id))
+                        working_hours, idle_hours, shed_type, atten_id))
         # 2) Mark existing machine rows for this attendance as inactive
         cursor.execute(Q.DEACTIVATE_MACHINE_ATTENDANCE, (atten_id,))
         # 3) Insert new active machine rows

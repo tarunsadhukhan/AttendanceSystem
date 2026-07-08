@@ -37,7 +37,7 @@ def get_mc_codes():
             FROM mechine_code_master
             WHERE branch_id = %s
               AND (is_active IS NULL OR is_active = 1)
-            ORDER BY mc_code
+            ORDER BY order_no
         """, (branch_id,))
         rows = cursor.fetchall()
         cursor.close()

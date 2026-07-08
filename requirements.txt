@@ -2,6 +2,7 @@ flask
 flask-cors
 mysql-connector-python
 fpdf2
+openpyxl
 APScheduler
 face-recognition
 numpy
