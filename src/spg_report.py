@@ -747,3 +747,13 @@ def start_scheduler():
         return _scheduler
     _scheduler = start_report_scheduler('SPG report', ('OE', 'SR'), send_daily_spg_report, 'spg')
     return _scheduler
+
+
+if __name__ == "__main__":
+    # Manual one-shot run (does NOT start the scheduler):
+    #   python -m src.spg_report [YYYY-MM-DD] [email ...]
+    # No date -> today. No emails -> every msg_for OE/SR recipient.
+    import sys
+    argv = sys.argv[1:]
+    rd = datetime.strptime(argv[0], '%Y-%m-%d').date() if argv else date.today()
+    send_daily_spg_report(rd, argv[1:] or None)

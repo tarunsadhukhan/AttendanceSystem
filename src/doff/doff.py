@@ -2383,6 +2383,58 @@ def delete_winding_entry2(rec_id):
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 
+# -- PUT /doff/winding-entry-2/<id> --------------------------------------------
+@doff_bp.route('/doff/winding-entry-2/<int:rec_id>', methods=['PUT'])
+def update_winding_entry2(rec_id):
+    """Update gross_weight (and optionally trolly_id + tare_weight) of one row;
+    net = round(gross - tare). Tare falls back to the stored value when the
+    client does not send one."""
+    try:
+        data  = request.get_json(silent=True) or {}
+        gross = data.get('gross_weight')
+        if gross is None:
+            return jsonify({'status': 'error', 'message': 'gross_weight required'}), 400
+        gross   = float(gross)
+        user_id = data.get('user_id') or 0
+
+        db  = get_db()
+        cur = db.cursor(dictionary=True)
+        cur.execute("""
+            SELECT tare_weight FROM daily_doff_frames_winding
+            WHERE daily_doff_frm_wdg_id = %s AND spg_wdg = 'W' AND active = 1
+        """, (rec_id,))
+        row = cur.fetchone()
+        if not row:
+            cur.close(); db.close()
+            return jsonify({'status': 'error', 'message': 'Entry not found'}), 404
+        tare = float(data['tare_weight']) if data.get('tare_weight') is not None \
+            else float(row['tare_weight'] or 0)
+        net  = int(round(gross - tare))
+        if net <= 0:
+            cur.close(); db.close()
+            return jsonify({'status': 'error', 'message': 'Net weight must be positive'}), 400
+
+        if 'trolly_id' in data:
+            cur.execute("""
+                UPDATE daily_doff_frames_winding
+                SET trolly_id = %s, gross_weight = %s, tare_weight = %s,
+                    net_weight = %s, user_id = %s
+                WHERE daily_doff_frm_wdg_id = %s
+            """, (data['trolly_id'], gross, tare, net, user_id, rec_id))
+        else:
+            cur.execute("""
+                UPDATE daily_doff_frames_winding
+                SET gross_weight = %s, tare_weight = %s, net_weight = %s, user_id = %s
+                WHERE daily_doff_frm_wdg_id = %s
+            """, (gross, tare, net, user_id, rec_id))
+        db.commit()
+        cur.close(); db.close()
+        return jsonify({'status': 'success', 'message': 'Updated', 'id': rec_id})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
 # -- GET /doff/winding-entry-2-summary ----------------------------------------
 @doff_bp.route('/doff/winding-entry-2-summary', methods=['GET'])
 def winding_entry2_summary():
@@ -2534,6 +2586,8 @@ def winding_entry2_detail():
                     w.sc_type,
                     w.trolly_id,
                     t.trolly_name,
+                    t.trolly_weight,
+                    t.busket_weight AS bucket_weight,
                     w.gross_weight,
                     w.tare_weight,
                     w.net_weight,
@@ -2580,6 +2634,8 @@ def winding_entry2_detail():
                 'sc_type':      r['sc_type'],
                 'trolly_id':    r['trolly_id'],
                 'trolly_name':  r['trolly_name'],
+                'trolly_weight': float(r['trolly_weight']) if r['trolly_weight'] is not None else None,
+                'bucket_weight': float(r['bucket_weight']) if r['bucket_weight'] is not None else None,
                 'quality_name': (r.get('quality_name') or '').strip() or None,
                 'gross_weight': float(r['gross_weight']) if r['gross_weight'] is not None else None,
                 'tare_weight':  float(r['tare_weight'])  if r['tare_weight']  is not None else None,
