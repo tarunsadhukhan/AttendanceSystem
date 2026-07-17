@@ -1,13 +1,4 @@
-﻿"""
-Database connection module
 """
-import mysql.connector
-DB_CONFIG = {
-    'host': '13.126.47.172',
-    'user': 'myroot',
-    'password': 'deb#9876',
-    'database': 'sjm'
-}
-def get_db():
-    """Get database connection"""
-    return mysql.connector.connect(**DB_CONFIG)
+Database connection module — single source of truth is db.py at repo root.
+"""
+from db import get_db  # noqa: F401  (re-exported for `from src.database import get_db`)

@@ -168,10 +168,23 @@ _MENU_TREE = [
                     ("menu_spg_running_hours",     "SPG Running Hours",      4, "ic_add", "SpgRunningHoursActivity",     0),
                 ],
             },
-            ("menu_winding_entry", "Winding Entry", 6, "ic_add", "WindingEntryActivity",    0),
-            ("menu_weaving_entry", "Weaving Entry", 7, "ic_add", "MenuPlaceholderActivity", 0),
             {
-                "group": ("grp_finishing_entry", "Finishing", 8, "ic_masters"),
+                "group": ("grp_winding_entry", "Winding", 6, "ic_masters"),
+                "children": [
+                    ("menu_winding_entry",      "Winding Entry",       1, "ic_add", "WindingEntryActivity",     0),
+                    ("menu_cont_winding_entry", "Cont. Winding Entry", 2, "ic_add", "ContWindingEntryActivity", 0),
+                ],
+            },
+            {
+                "group": ("grp_others_entry", "Others Entry", 7, "ic_masters"),
+                "children": [
+                    ("menu_mechine_entry",    "Machine Entry",     1, "ic_add", "MachineActivity",    0),
+                    ("menu_newmechine_entry", "New Machine Entry", 2, "ic_add", "NewMachineActivity", 0),
+                ],
+            },
+            ("menu_weaving_entry", "Weaving Entry", 8, "ic_add", "MenuPlaceholderActivity", 0),
+            {
+                "group": ("grp_finishing_entry", "Finishing", 9, "ic_masters"),
                 "children": [
                     ("menu_other_entries",          "Other Entries",          1, "ic_add", "OtherEntriesActivity",         0),
                     ("menu_bales_production_entry", "Bales Production Entry", 2, "ic_add", "BalesProductionEntryActivity", 0),
@@ -179,12 +192,12 @@ _MENU_TREE = [
                 ],
             },
             {
-                "group": ("grp_stocks", "Stocks", 9, "ic_masters"),
+                "group": ("grp_stocks", "Stocks", 10, "ic_masters"),
                 "children": [
                     ("menu_roll_stock", "Roll Stock", 1, "ic_report", "RollStockActivity", 0),
                 ],
             },
-            ("menu_weight_entry", "Weight Entry", 10, "ic_add", "WeightEntryActivity", 0),
+            ("menu_weight_entry", "Weight Entry", 11, "ic_add", "WeightEntryActivity", 0),
         ],
     },
 ]
@@ -201,7 +214,9 @@ _SUPERVISOR_KEYS = (
     "menu_drawing_meter_entry", "menu_spinning_doff_entry",
     "grp_doff_entry", "menu_spellwise_frame_entry", "menu_spg_doff_entry",
     "menu_spg_doff_entry1", "menu_spg_running_hours",
-    "menu_winding_entry", "menu_weaving_entry",
+    "grp_winding_entry", "menu_winding_entry", "menu_cont_winding_entry",
+    "grp_others_entry", "menu_mechine_entry", "menu_newmechine_entry",
+    "menu_weaving_entry",
     "grp_finishing_entry", "menu_other_entries", "menu_bales_production_entry",
     "menu_bales_issue_entry", "grp_stocks", "menu_roll_stock", "menu_weight_entry",
 )
@@ -212,7 +227,8 @@ _OPERATOR_KEYS = (
     "grp_production", "grp_jute", "menu_jute_received", "menu_assorting_entry",
     "menu_jute_mukam_received",
     "menu_drawing_meter_entry", "menu_spinning_doff_entry",
-    "menu_winding_entry", "menu_weight_entry",
+    "grp_winding_entry", "menu_winding_entry", "menu_cont_winding_entry",
+    "menu_weight_entry",
 )
 
 
@@ -240,11 +256,11 @@ def _seed_menu_tree(cursor, nodes, parent_id):
 
 
 def _backfill_menu(cursor, db, key, name, parent_key, order, icon,
-                   activity_class, view_roles=()):
+                   activity_class, view_roles=(), is_group=0):
     """
-    Idempotently ensure a single leaf menu exists and is granted to roles.
-    No-op if the menu_key is already present. Used for menus added after the
-    initial one-shot seed (which only runs on an empty `menus` table).
+    Idempotently ensure a single menu (leaf or group) exists and is granted to
+    roles. No-op if the menu_key is already present. Used for menus added after
+    the initial one-shot seed (which only runs on an empty `menus` table).
     """
     cursor.execute("SELECT id FROM menus WHERE menu_key = %s", (key,))
     if cursor.fetchone() is not None:
@@ -257,7 +273,7 @@ def _backfill_menu(cursor, db, key, name, parent_key, order, icon,
         return
     parent_id = row[0]
 
-    menu_id = _insert_menu(cursor, key, name, parent_id, order, icon, activity_class, 0)
+    menu_id = _insert_menu(cursor, key, name, parent_id, order, icon, activity_class, is_group)
 
     # Admin -> can_all; Manager -> all but delete; named view_roles -> view+add.
     cursor.execute(
@@ -397,6 +413,52 @@ def init_permissions_db():
             activity_class="JuteMukamReceivedActivity",
             # Roles (besides Admin/Manager who get every menu) that may view it.
             view_roles=("Supervisor", "Operator"),
+        )
+        _backfill_menu(
+            cursor, db,
+            key="grp_winding_entry", name="Winding",
+            parent_key="grp_production", order=6, icon="ic_masters",
+            activity_class=None, is_group=1,
+            # Operator needs the group key too, else the header/subMenu
+            # container hides and takes menu_winding_entry with it.
+            view_roles=("Supervisor", "Operator"),
+        )
+        _backfill_menu(
+            cursor, db,
+            # Re-inserted under the group: the original row (old parent
+            # grp_production) was lost to a cascade delete on one DB.
+            key="menu_winding_entry", name="Winding Entry",
+            parent_key="grp_winding_entry", order=1, icon="ic_add",
+            activity_class="WindingEntryActivity",
+            view_roles=("Supervisor", "Operator"),
+        )
+        _backfill_menu(
+            cursor, db,
+            key="menu_cont_winding_entry", name="Cont. Winding Entry",
+            parent_key="grp_winding_entry", order=2, icon="ic_add",
+            activity_class="ContWindingEntryActivity",
+            view_roles=("Supervisor", "Operator"),
+        )
+        _backfill_menu(
+            cursor, db,
+            key="grp_others_entry", name="Others Entry",
+            parent_key="grp_production", order=7, icon="ic_masters",
+            activity_class=None, is_group=1,
+            view_roles=("Supervisor",),
+        )
+        _backfill_menu(
+            cursor, db,
+            key="menu_mechine_entry", name="Machine Entry",
+            parent_key="grp_others_entry", order=1, icon="ic_add",
+            activity_class="MachineActivity",
+            view_roles=("Supervisor",),
+        )
+        _backfill_menu(
+            cursor, db,
+            key="menu_newmechine_entry", name="New Machine Entry",
+            parent_key="grp_others_entry", order=2, icon="ic_add",
+            activity_class="NewMachineActivity",
+            view_roles=("Supervisor",),
         )
 
         # ---- Assign user_mst.user_id = 1 to Admin -----------------------
