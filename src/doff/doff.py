@@ -1466,7 +1466,7 @@ def validate_doff_machine():
                       AND (t.branch_id IS NULL OR t.branch_id = %s)
                 WHERE (m.active IS NULL OR m.active = 1)
                   AND dm.branch_id = %s
-                  AND (m.trolly_posting_code = %s OR m.machine_name = %s)
+                  AND (m.mech_code = %s OR m.machine_name = %s)
                 LIMIT 1
             """
             params = (branch_id, branch_id, mc_no, mc_no)
@@ -2806,14 +2806,15 @@ def get_spg_running_machines():
         db = get_db()
         cur = db.cursor(dictionary=True)
         sql="""
-            SELECT machine_id    AS mc_id,
-                   machine_name  AS mc_name,
-                   mech_code     AS mc_code
-            FROM machine_mst
-            WHERE branch_id       = %s
-              AND machine_type_id = 36
-              AND (active IS NULL OR active = 1)
-            ORDER BY machine_name
+            SELECT m.machine_id    AS mc_id,
+                   m.machine_name  AS mc_name,
+                   m.mech_code     AS mc_code
+            FROM machine_mst m
+            INNER JOIN dept_mst dm ON dm.dept_id = m.dept_id
+            WHERE dm.branch_id      = %s
+              AND m.machine_type_id = 36
+              AND (m.active IS NULL OR m.active = 1)
+            ORDER BY m.machine_name
         """
         cur.execute(sql, (branch_id,))
         rows = cur.fetchall()

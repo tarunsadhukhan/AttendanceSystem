@@ -405,6 +405,12 @@ def get_shifts():
         data = cursor.fetchall()
         cursor.close()
         db.close()
+        for r in data:  # TIME/DECIMAL columns arrive as timedelta/Decimal, which jsonify rejects
+            for k in ('start_time', 'end_time'):
+                if r.get(k) is not None and not isinstance(r[k], str):
+                    r[k] = str(r[k])
+            if r.get('working_hours') is not None:
+                r['working_hours'] = float(r['working_hours'])
         return jsonify({'status': 'success', 'shifts': data, 'total': len(data)})
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500

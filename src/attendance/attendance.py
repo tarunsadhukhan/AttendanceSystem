@@ -592,7 +592,8 @@ def emp_wise_attendance():
         if designation_id:
             emp_sql += " AND o.designation_id = %s"
             emp_params.append(designation_id)
-        emp_sql += " ORDER BY o.emp_code"
+        # alias, not o.emp_code: DISTINCT + ORDER BY raw column trips MySQL 3065
+        emp_sql += " ORDER BY emp_code"
 
         cursor.execute(emp_sql, tuple(emp_params))
         employees = cursor.fetchall()
