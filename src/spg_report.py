@@ -48,8 +48,8 @@ def fetch_spg_quality_shift(date_str, branch_id):
         left join spinning_type_mst stm on stm.spg_type_mst_id =q.spg_type_id
         WHERE d.doff_date = %s AND d.branch_id = %s
           AND (d.active IS NULL OR d.active = 1)
-        GROUP BY concat(spg_type_name,' ',q.spg_quality,' ',q.speed)
-        ORDER BY concat(spg_type_name,' ',q.spg_quality,' ',q.speed)
+        GROUP BY spg_type_name, q.spg_quality, q.speed
+        ORDER BY spg_type_name, q.spg_quality, q.speed
     """
     cur.execute(sql, (date_str, branch_id))
     rows = cur.fetchall()
