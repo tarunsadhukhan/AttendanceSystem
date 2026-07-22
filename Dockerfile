@@ -17,4 +17,4 @@ RUN pip install --no-cache-dir git+https://github.com/ageitgey/face_recognition_
 COPY . .
 
 EXPOSE 5051
-CMD ["gunicorn", "--bind", "0.0.0.0:5051", "--timeout", "120", "app:app"]
+CMD ["gunicorn", "--bind", "0.0.0.0:5051", "--workers", "1", "--timeout", "120", "app:app"]

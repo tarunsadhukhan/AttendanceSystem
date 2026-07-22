@@ -1,0 +1,11 @@
+services:
+  attendance:
+    image: ghcr.io/tarunsadhukhan/attendancesystem:latest
+    container_name: attendance
+    restart: unless-stopped
+    ports:
+      - "5051:5051"
+    env_file: .env
+    environment:
+      - RUN_SCHEDULERS=1
+      - TZ=Asia/Kolkata
