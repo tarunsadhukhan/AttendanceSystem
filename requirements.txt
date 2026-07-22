@@ -4,6 +4,8 @@ mysql-connector-python
 fpdf2
 openpyxl
 APScheduler
+bcrypt
+Pillow
 face-recognition
 numpy
 opencv-python-headless
