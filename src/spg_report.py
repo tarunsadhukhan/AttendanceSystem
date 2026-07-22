@@ -48,8 +48,8 @@ def fetch_spg_quality_shift(date_str, branch_id):
         left join spinning_type_mst stm on stm.spg_type_mst_id =q.spg_type_id
         WHERE d.doff_date = %s AND d.branch_id = %s
           AND (d.active IS NULL OR d.active = 1)
-        GROUP BY spg_type_name, q.spg_quality, q.speed
-        ORDER BY spg_type_name, q.spg_quality, q.speed
+        GROUP BY quality_name
+        ORDER BY quality_name
     """
     cur.execute(sql, (date_str, branch_id))
     rows = cur.fetchall()
@@ -65,6 +65,11 @@ def fetch_winding_quality_shift(date_str, branch_id):
     """
     db = get_db()
     cur = db.cursor(dictionary=True)
+    # Effective quality = the weighing row's own quality_id, else the frame
+    # assignment for that employee (mc_eb_id = eb, eb_id IS NULL) — same rule
+    # as /doff/winding-entry-2-summary. The scalar subquery cannot fan out,
+    # unlike a join (one employee may have several assignment rows, which
+    # previously double-counted net_weight).
     sql = """
         SELECT
             COALESCE(q.wng_quality, 'Unknown') AS quality_name,
@@ -73,17 +78,27 @@ def fetch_winding_quality_shift(date_str, branch_id):
             COALESCE(SUM(CASE WHEN s.spell_name LIKE '%C%' THEN w.net_weight ELSE 0 END), 0) AS shift_c,
             COALESCE(SUM(w.net_weight), 0) AS total
         FROM daily_doff_frames_winding w
-        left join daily_doff_frames_winding ddfw on ddfw.mc_eb_id =w.eb_id and ddfw.tran_date =w.tran_date
-        and ddfw.spell =w.spell and ddfw.eb_id is null
-        LEFT JOIN spell_mst s ON w.spell_id = s.spell_id
-        LEFT JOIN winding_quality_master q ON ddfw.quality_id = q.wng_quality_mst_id
+        LEFT JOIN spell_mst s ON COALESCE(w.spell_id, w.spell) = s.spell_id
+        LEFT JOIN winding_quality_master q ON q.wng_quality_mst_id = COALESCE(
+            w.quality_id,
+            (SELECT a.quality_id
+               FROM daily_doff_frames_winding a
+              WHERE a.mc_eb_id   = w.eb_id
+                AND a.eb_id IS NULL
+                AND a.spg_wdg    = 'W'
+                AND a.tran_date  = w.tran_date
+                AND a.branch_id  = w.branch_id
+                AND (a.spell_id  = w.spell_id OR a.spell = w.spell)
+                AND a.quality_id IS NOT NULL
+              ORDER BY a.daily_doff_frm_wdg_id DESC
+              LIMIT 1))
         WHERE w.tran_date = %s
           AND w.branch_id = %s
           AND w.spg_wdg = 'W'
           AND w.net_weight IS NOT NULL
           AND (w.active IS NULL OR w.active = 1)
-        GROUP BY q.wng_quality
-        ORDER BY q.wng_quality
+        GROUP BY quality_name
+        ORDER BY quality_name
     """
     cur.execute(sql, (date_str, branch_id))
     rows = cur.fetchall()
