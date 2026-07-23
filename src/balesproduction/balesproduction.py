@@ -33,7 +33,8 @@ def get_mc_codes():
                    mc_code,
                    Mechine_type_name AS mechine_type_name,
                    dept_id,
-                   machine_type
+                   machine_type,
+                   shed_type
             FROM mechine_code_master
             WHERE branch_id = %s
               AND (is_active IS NULL OR is_active = 1)
