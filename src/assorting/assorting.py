@@ -152,6 +152,7 @@ def get_assorting_qualities():
                    jute_quality AS quality_name
             FROM jute_quality_mst
             WHERE branch_id = %s
+              AND active = 1
             ORDER BY shr_name, jute_quality
         """, (branch_id,))
         rows = cursor.fetchall()
