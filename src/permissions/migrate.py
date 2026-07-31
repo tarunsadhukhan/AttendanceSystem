@@ -165,7 +165,8 @@ _MENU_TREE = [
                     ("menu_spellwise_frame_entry", "Spell-wise Frame Entry", 1, "ic_add", "SpellWiseFrameEntryActivity", 0),
                     ("menu_spg_doff_entry",        "Spg Doff Entry",         2, "ic_add", "NewDoffEntryActivity",        0),
                     ("menu_spg_doff_entry1",       "Spg Doff Entry 1",       3, "ic_add", "SpgDoffEntry1Activity",       0),
-                    ("menu_spg_running_hours",     "SPG Running Hours",      4, "ic_add", "SpgRunningHoursActivity",     0),
+                    ("menu_spg_doff_pic",          "Spg Doff with Pic",      4, "ic_add", "SpgDoffpicActivity",          0),
+                    ("menu_spg_running_hours",     "SPG Running Hours",      5, "ic_add", "SpgRunningHoursActivity",     0),
                 ],
             },
             {
@@ -213,7 +214,7 @@ _SUPERVISOR_KEYS = (
     "grp_spreader_entry", "menu_production_entry", "menu_issue_entry",
     "menu_drawing_meter_entry", "menu_spinning_doff_entry",
     "grp_doff_entry", "menu_spellwise_frame_entry", "menu_spg_doff_entry",
-    "menu_spg_doff_entry1", "menu_spg_running_hours",
+    "menu_spg_doff_entry1", "menu_spg_doff_pic", "menu_spg_running_hours",
     "grp_winding_entry", "menu_winding_entry", "menu_cont_winding_entry",
     "grp_others_entry", "menu_mechine_entry", "menu_newmechine_entry",
     "menu_weaving_entry",
@@ -438,6 +439,13 @@ def init_permissions_db():
             parent_key="grp_winding_entry", order=2, icon="ic_add",
             activity_class="ContWindingEntryActivity",
             view_roles=("Supervisor", "Operator"),
+        )
+        _backfill_menu(
+            cursor, db,
+            key="menu_spg_doff_pic", name="Spg Doff with Pic",
+            parent_key="grp_doff_entry", order=4, icon="ic_add",
+            activity_class="SpgDoffpicActivity",
+            view_roles=("Supervisor",),
         )
         _backfill_menu(
             cursor, db,
