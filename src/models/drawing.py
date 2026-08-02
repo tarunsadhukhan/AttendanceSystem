@@ -16,6 +16,7 @@ class DrawingMst:
     branch_id: Optional[int]
     updated_by: Optional[int]
     updated_date_time: Optional[datetime]
+    meter_type: int = 1             # 0=hide meter-units boxes, 1=as-is, 2=/3600
 
     @staticmethod
     def from_row(row: dict) -> 'DrawingMst':
@@ -29,6 +30,7 @@ class DrawingMst:
             branch_id=row.get('branch_id'),
             updated_by=row.get('updated_by'),
             updated_date_time=row.get('updated_date_time'),
+            meter_type=row.get('meter_type', 1) if row.get('meter_type') is not None else 1,
         )
 
     def to_dict(self) -> dict:
@@ -40,6 +42,7 @@ class DrawingMst:
             'const_meter': self.const_meter,
             'drg_type': self.drg_type,
             'branch_id': self.branch_id,
+            'meter_type': self.meter_type,
         }
 
 
@@ -59,6 +62,8 @@ class DailyDrawing:
     branch_id: Optional[int]
     updated_by: Optional[int]
     updated_date_time: Optional[datetime]
+    meter_units: Optional[Decimal] = None   # raw input
+    meter_hours: Optional[Decimal] = None   # calculated per master meter_type
 
     @property
     def eff(self) -> Optional[float]:
@@ -69,6 +74,16 @@ class DailyDrawing:
                     ((self.difference / float(self.running_hours) * 8) / self.const_meter * 100),
                     2
                 )
+        except (TypeError, ZeroDivisionError):
+            pass
+        return 0.0
+
+    @property
+    def meter_eff(self) -> float:
+        """meter_hours / running_hours * 100 (not stored in DB)."""
+        try:
+            if self.running_hours and float(self.running_hours) > 0 and self.meter_hours is not None:
+                return round(float(self.meter_hours) / float(self.running_hours) * 100, 2)
         except (TypeError, ZeroDivisionError):
             pass
         return 0.0
@@ -89,6 +104,8 @@ class DailyDrawing:
             branch_id=row.get('branch_id'),
             updated_by=row.get('updated_by'),
             updated_date_time=row.get('updated_date_time'),
+            meter_units=row.get('meter_units'),
+            meter_hours=row.get('meter_hours'),
         )
 
     def to_dict(self) -> dict:
@@ -103,6 +120,9 @@ class DailyDrawing:
             'unit': self.unit,
             'const_meter': self.const_meter,
             'running_hours': float(self.running_hours) if self.running_hours is not None else None,
+            'meter_units': float(self.meter_units) if self.meter_units is not None else 0.0,
+            'meter_hours': float(self.meter_hours) if self.meter_hours is not None else 0.0,
+            'meter_eff': self.meter_eff,
             'eff': self.eff,
             'branch_id': self.branch_id,
         }

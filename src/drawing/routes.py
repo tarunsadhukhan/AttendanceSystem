@@ -7,7 +7,8 @@ Tables:
                       drg_type, branch_id, updated_by, updated_date_time)
   tbl_daily_drawing  (tbl_daily_drg_id, mc_id, tran_date, spell_id,
                       opening_meter, closing_meter, difference, const_meter,
-                      running_hours, branch_id, updated_by, updated_date_time)
+                      running_hours, meter_units, meter_hours,
+                      branch_id, updated_by, updated_date_time)
 """
 import traceback
 from flask import request, jsonify
@@ -72,7 +73,7 @@ def get_drawing_machines():
         cursor = db.cursor(dictionary=True)
 
         query = """
-            SELECT drg_mst_id, mc_id, short_name, const_meter, drg_type
+            SELECT drg_mst_id, mc_id, short_name, const_meter, drg_type, meter_type
             FROM tbl_drawing_mst
             WHERE shed_type = %s
         """
@@ -172,6 +173,7 @@ def save_drawing_entry():
         opening_meter = int(data.get('opening_meter') or 0)
         closing_meter = int(data.get('closing_meter') or 0)
         running_hours = float(data.get('hours') or 0)
+        meter_units   = float(data.get('meter_units') or 0)
         branch_id     = data.get('branch_id')
         updated_by    = data.get('user_id') or 0
         print("Received drawing entry data:", data)
@@ -186,13 +188,23 @@ def save_drawing_entry():
         db = get_db()
         cursor = db.cursor(dictionary=True)
 
-        # Fetch const_meter from master
+        # Fetch const_meter + meter_type from master
         cursor.execute(
-            "SELECT const_meter FROM tbl_drawing_mst WHERE mc_id = %s LIMIT 1",
+            "SELECT const_meter, meter_type FROM tbl_drawing_mst WHERE mc_id = %s LIMIT 1",
             (mc_id,)
         )
         mst = cursor.fetchone()
         const_meter = int(mst['const_meter']) if mst and mst['const_meter'] else 0
+        meter_type  = int(mst['meter_type']) if mst and mst['meter_type'] is not None else 1
+
+        # meter_hours: 0=not applicable, 1=as entered, 2=units/3600
+        if meter_type == 2:
+            meter_hours = round(meter_units / 3600, 2)
+        elif meter_type == 1:
+            meter_hours = meter_units
+        else:
+            meter_units = 0
+            meter_hours = 0
 
         # Calculate efficiency (for response only, not stored)
         if running_hours > 0 and const_meter > 0:
@@ -217,10 +229,12 @@ def save_drawing_entry():
                 UPDATE tbl_daily_drawing
                 SET opening_meter = %s, closing_meter = %s, difference = %s,
                     const_meter = %s, running_hours = %s,
+                    meter_units = %s, meter_hours = %s,
                     branch_id = %s, updated_by = %s
                 WHERE tbl_daily_drg_id = %s
             """, (opening_meter, closing_meter, difference,
                   const_meter, running_hours,
+                  meter_units, meter_hours,
                   branch_id, updated_by, existing[0]))
             entry_id = existing[0]
             message  = 'Entry updated successfully'
@@ -228,10 +242,12 @@ def save_drawing_entry():
             cursor2.execute("""
                 INSERT INTO tbl_daily_drawing
                     (mc_id, tran_date, spell_id, opening_meter, closing_meter,
-                     difference, const_meter, running_hours, branch_id, updated_by)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                     difference, const_meter, running_hours,
+                     meter_units, meter_hours, branch_id, updated_by)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """, (mc_id, date_str, spell_id, opening_meter, closing_meter,
-                  difference, const_meter, running_hours, branch_id, updated_by))
+                  difference, const_meter, running_hours,
+                  meter_units, meter_hours, branch_id, updated_by))
             entry_id = cursor2.lastrowid
             message  = 'Entry saved successfully'
 
@@ -287,7 +303,9 @@ def get_drawing_summary():
                 d.difference ,
                 d.difference as unit,
                 d.const_meter,
-                d.running_hours
+                d.running_hours,
+                d.meter_units,
+                d.meter_hours
             FROM tbl_daily_drawing d
             JOIN tbl_drawing_mst m ON m.mc_id = d.mc_id
             WHERE d.tran_date = %s AND d.spell_id = %s
