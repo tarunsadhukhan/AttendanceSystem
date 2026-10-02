@@ -6,7 +6,7 @@ except ImportError:
     face_recognition = None
 
 import numpy as np
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from flask import Blueprint, request, jsonify
 from db import get_db
 from src.utils import decode_image
@@ -26,6 +26,24 @@ def _require_face_recognition():
             "message": "face_recognition dependency is not installed on server"
         }), 503
     return None
+
+
+def _spell_window_error(att_date, spell, now=None):
+    """Face attendance must be punched inside the spell's hours on att_date.
+    Overnight spells (is_overnight=1, e.g. C 22:00-06:00) end on the next day.
+    Returns an error message, or None when `now` is inside the window."""
+    if not spell or spell.get('starting_time') is None or spell.get('end_time') is None:
+        return None
+    now   = now or datetime.now()
+    day   = datetime.strptime(str(att_date)[:10], "%Y-%m-%d")
+    start = day + spell['starting_time']
+    end   = day + spell['end_time']
+    if spell.get('is_overnight') or end <= start:
+        end += timedelta(days=1)
+    if start <= now <= end:
+        return None
+    return (f"Face attendance for spell {spell['spell_name']} on {day:%d-%m-%Y} is allowed only "
+            f"between {start:%d-%m-%Y %H:%M} and {end:%d-%m-%Y %H:%M}")
 
 
 
@@ -89,9 +107,14 @@ def mark_attendance():
         # Get spell name from shift_id if provided
         spell_name = None
         if shift_id:
-            cursor.execute("SELECT spell_name FROM spell_mst WHERE spell_id = %s", (shift_id,))
+            cursor.execute("SELECT spell_name, starting_time, end_time, is_overnight "
+                           "FROM spell_mst WHERE spell_id = %s", (shift_id,))
             spell_row = cursor.fetchone()
             spell_name = spell_row['spell_name'] if spell_row else None
+            window_err = _spell_window_error(att_date, spell_row)
+            if window_err:
+                cursor.close(); db.close()
+                return jsonify({"status": "error", "message": window_err}), 400
 
         print(f"[ATT] eb_id={eb_id} emp_code={emp_code} att_type={att_type} "
               f"date={att_date} dept={department_id} shift={shift_id} desig={designation_id} "
